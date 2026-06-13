@@ -1,0 +1,16 @@
+.git
+.gitignore
+.pytest_cache
+**/__pycache__/
+**/.DS_Store
+**/*.pyc
+**/*.pyo
+**/*.pyd
+backend/venv
+.venv
+node_modules
+dist
+build
+.idea
+.vscode
+

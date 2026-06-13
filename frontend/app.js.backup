@@ -1,0 +1,2641 @@
+const fileInput = document.getElementById("audioFile");
+const analysisMode = document.getElementById("analysisMode");
+const modeSelect = document.getElementById("modeSelect");
+const modeToggle = document.getElementById("modeToggle");
+const modeMenu = document.getElementById("modeMenu");
+const modeDisplay = document.getElementById("modeDisplay");
+const analyzeBtn = document.getElementById("analyzeBtn");
+const selectTrackBtn = document.getElementById("selectTrackBtn");
+const selectedTrack = document.getElementById("selectedTrack");
+const newAnalysisBtn = document.getElementById("newAnalysisBtn");
+const uploadAnotherBtn = document.getElementById("uploadAnotherBtn");
+const utilityActions = document.getElementById("utilityActions");
+const uploadPanel = document.getElementById("uploadPanel");
+const dropZone = document.getElementById("dropZone");
+const heroShell = document.getElementById("heroShell");
+const statusBox = document.getElementById("status");
+const statusMirror = document.getElementById("statusMirror");
+const statusBadge = document.getElementById("statusBadge");
+const reportSection = document.getElementById("report");
+const trackName = document.getElementById("trackName");
+const trackDuration = document.getElementById("trackDuration");
+const trackSampleRate = document.getElementById("trackSampleRate");
+const trackMode = document.getElementById("trackMode");
+const scoreRing = document.getElementById("scoreRing");
+const overallScore = document.getElementById("overallScore");
+const topbarScore = document.getElementById("topbarScore");
+const qualityBadge = document.getElementById("qualityBadge");
+const qualityTierText = document.getElementById("qualityTierText");
+const qualityStars = document.getElementById("qualityStars");
+const technicalVerdict = document.getElementById("technicalVerdict");
+const tonalSummary = document.getElementById("tonalSummary");
+const summaryCards = document.getElementById("summaryCards");
+const frequencyBands = document.getElementById("frequencyBands");
+const stereoViz = document.getElementById("stereoViz");
+const stereoScoreText = document.getElementById("stereoScoreText");
+const phaseScope = document.getElementById("phaseScope");
+const phaseStatusTag = document.getElementById("phaseStatusTag");
+const dynamicsViz = document.getElementById("dynamicsViz");
+const dynamicsScoreText = document.getElementById("dynamicsScoreText");
+const tonalHeatmap = document.getElementById("tonalHeatmap");
+const resultBox = document.getElementById("result");
+const tooltipPanel = document.getElementById("tooltipPanel");
+const tooltipTitle = document.getElementById("tooltipTitle");
+const tooltipBody = document.getElementById("tooltipBody");
+const tooltipSuggest = document.getElementById("tooltipSuggest");
+const assistantDock = document.getElementById("assistantDock");
+const assistantMood = document.getElementById("assistantMood");
+const assistantLine = document.getElementById("assistantLine");
+const assistantMetrics = document.getElementById("assistantMetrics");
+const appRoot = document.getElementById("appRoot");
+
+let assistantBaseState = {
+  mood: "Idle",
+  quality: "average",
+  expression: "neutral",
+  sections: [
+    {
+      id: "listening",
+      body: "Load a track. I will tell you how it feels before the numbers start talking over it.",
+    },
+  ],
+};
+
+let activeTooltipTarget = null;
+let tooltipPointer = null;
+let tooltipFrame = 0;
+let waveformPreview = null;
+let waveformPreviewFileName = "";
+let currentAnalysisData = null;
+let currentAnalyzedTrackName = "";
+let previewDecodeToken = 0;
+let trackMapAnalysisActive = false;
+let currentTrackMapState = null;
+
+const FREQUENCY_BAND_META = [
+  ["sub", "Sub", "20-60 Hz", "Weight and rumble control.", "#5d89d8", "93, 137, 216"],
+  ["bass", "Bass", "60-250 Hz", "Punch and low-end foundation.", "#63b97c", "99, 185, 124"],
+  ["low_mid", "Low Mid", "250-500 Hz", "Body, mud and boxiness zone.", "#d79254", "215, 146, 84"],
+  ["mid", "Mid", "500-2000 Hz", "Presence, focus and intelligibility.", "#5fc3d6", "95, 195, 214"],
+  ["high_mid", "High Mid", "2000-6000 Hz", "Attack, bite and forwardness.", "#cf6d67", "207, 109, 103"],
+  ["high", "High", "6000-16000 Hz", "Air, sheen and brightness.", "#8d73cf", "141, 115, 207"],
+];
+
+const API_URL = `${window.location.protocol}//${window.location.hostname}:8000/analyze`;
+const UI_TEXT_FALLBACK = "Text unavailable.";
+const LEGACY_UI_TRANSLATIONS = new Map([
+  ["Nobette", "Idle"],
+  ["Mesai", "Concerned"],
+  ["Yogun", "Crowded"],
+  ["Subda", "Low-End Heavy"],
+  ["Sert", "Critical"],
+  ["Temkinli", "Reserved"],
+  ["Memnun", "Approved"],
+  ["Onayli", "Confident"],
+  ["Dinliyor", "Listening"],
+  ["Dinlemede", "Listening"],
+  ["Kesildi", "Interrupted"],
+  ["Dosya gelince konusurum.", "Load a track. I will tell you how it feels before the numbers start talking over it."],
+  ["Limiter burada mesaiye kalmis.", "The limiter is working overtime here."],
+  ["Kick ile bass ayni apartmanda kavga ediyor.", "Kick and bass are fighting for the same space."],
+  ["Bu kadar sub basinca kick tasinmayi dusunuyor.", "That much sub makes the kick want to move out."],
+  ["Low-mid tarafinda trafik var.", "The low-mid range is congested."],
+  ["Stereo alan nefes almak istiyor.", "The stereo field needs more room to breathe."],
+  ["Biraz alan acilirsa kendine gelir.", "A little more separation would steady this mix."],
+  ["Transientleri oldurmemis olman guzel.", "Good call. The transients are still alive."],
+  ["Low-end kontrolu saglam.", "Low-end control is holding up well."],
+  ["Tamam... burada biri ne yaptigini biliyor.", "All right... someone here knows what they are doing."],
+  ["Limiter fazla calismamis. Saygi duydum.", "The limiter is not overworking. Respect."],
+  ["Biraz daha alan acilirsa toparlayabilir.", "A bit more separation would help it settle."],
+  ["Yeni dosyayi ac, kulaklari tekrar masaya koyalim.", "Open a new track and we will put the ears back on the desk."],
+  ["Bir tur dinliyorum. Peak, stereo ve tonal denge birazdan masada.", "I am listening through it now. Give me a second and I will tell you what kind of mood just walked into the room."],
+  ["Bu sefer veri masaya dusmedi. Dosyayi bir daha deneyelim.", "The data did not land this time. Try the file again."],
+  ["Ses yukselir, ama dinamigi rehin vermemek lazim.", "You can push loudness further, but do not ransom the dynamics."],
+  ["0 dBFS'ye fazla yaklasinca codec'ler huysuzlasir.", "Get too close to 0 dBFS and codecs become unpredictable."],
+  ["Stereo guzel ama merkez biraz yalniz kalmis olabilir.", "The stereo field is healthy, but the center may be a little exposed."],
+  ["Faz guvendeyse genislik daha rahat nefes alir.", "When phase is stable, stereo width breathes more naturally."],
+  ["Low-mid tarafinda trafik varsa herkes ayni kapiya cikiyor demektir.", "If the low-mid range is congested, too many parts are leaving through the same door."],
+  ["Transientleri oldurmeden yuksek ses almak zaten isin ince tarafi.", "Getting louder without killing the transients is the fine part of the job."],
+  ["Ust taraf eksikse mix kucuk hoparlorde biraz erken yorulur.", "If the top end is missing, the mix can feel dull on small speakers."],
+  ["Bu notlari kulakla dogrula; sadece sayiya bakip karar verilmez.", "Verify these notes by ear. Numbers alone should not make the call."],
+]);
+const LEGACY_UI_REPLACEMENTS = [
+  [/kulaklari tekrar masaya koyalim/gi, "put the ears back on the desk"],
+  [/tonal denge/gi, "tonal balance"],
+  [/veri masaya dusmedi/gi, "the data did not land"],
+  [/dosyayi bir daha deneyelim/gi, "try the file again"],
+  [/nefes almak istiyor/gi, "needs more room to breathe"],
+  [/kendine gelir/gi, "will settle"],
+];
+const SCORE_WEIGHTS = {
+  peakSafety: 0.14,
+  loudnessBalance: 0.12,
+  crestFactor: 0.1,
+  stereoUsage: 0.1,
+  frequencyBalance: 0.16,
+  harshness: 0.1,
+  mud: 0.1,
+  monoCompatibility: 0.08,
+  dynamicRange: 0.1,
+};
+
+const TRANSLATION_LOCK_SELECTORS = [
+  "button",
+  "summary",
+  ".eyebrow",
+  ".micro-label",
+  ".mini-note",
+  ".section-kicker",
+  ".control-label",
+  ".meta-pill",
+  ".meta-strong",
+  ".quality-pill",
+  ".status-pill",
+  ".quality-stars",
+  ".score-label",
+  ".score-value",
+  ".tier-text",
+  ".technical-verdict",
+  ".assistant-name",
+  ".assistant-mood",
+  ".assistant-metric",
+  ".assistant-metric-label",
+  ".assistant-metric-value",
+  ".metric-label",
+  ".metric-value",
+  ".metric-state",
+  ".summary-chip",
+  ".summary-chip-label",
+  ".summary-chip-value",
+  ".heat-meter",
+  ".heat-meter-label",
+  ".heat-meter-range",
+  ".track-map-section",
+  ".track-map-key",
+  ".track-map-bounds span",
+  ".track-map-inspector-time",
+  ".track-map-inspector-grid span",
+  ".track-map-preview-note",
+  ".track-map-empty",
+  ".phase-axis-label",
+  ".phase-readout",
+  ".phase-readout-label",
+  ".phase-readout-value",
+  ".stereo-tag",
+  ".stereo-readout-label",
+  ".stereo-readout-value",
+  ".stereo-scope-side",
+  ".stereo-scope-center",
+  ".stereo-zone",
+  ".tooltip-title",
+  ".tooltip-body",
+  ".tooltip-suggest",
+  ".raw-json",
+  ".developer-data",
+].join(", ");
+
+function markNodeNotranslate(node) {
+  if (!node) return;
+  node.setAttribute("translate", "no");
+  node.classList.add("notranslate");
+}
+
+function markNodeTranslatable(node) {
+  if (!node) return;
+  node.setAttribute("translate", "yes");
+  node.classList.remove("notranslate");
+}
+
+function applyTranslationProtection(root = document) {
+  [
+    document.body,
+    appRoot,
+    heroShell,
+    reportSection,
+    tooltipPanel,
+    assistantMetrics,
+  ].forEach(markNodeNotranslate);
+
+  root.querySelectorAll(TRANSLATION_LOCK_SELECTORS).forEach(markNodeNotranslate);
+  markNodeTranslatable(assistantLine);
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function formatMetric(value, suffix = "") {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "N/A";
+  return `${Number(value).toFixed(2)}${suffix}`;
+}
+
+function safeNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function normalizeUiText(value) {
+  if (value === null || value === undefined) return UI_TEXT_FALLBACK;
+  if (typeof value !== "string") return String(value);
+
+  const trimmed = value.trim();
+  if (!trimmed) return UI_TEXT_FALLBACK;
+  if (LEGACY_UI_TRANSLATIONS.has(trimmed)) return LEGACY_UI_TRANSLATIONS.get(trimmed);
+
+  let normalized = trimmed;
+  LEGACY_UI_REPLACEMENTS.forEach(([pattern, replacement]) => {
+    normalized = normalized.replace(pattern, replacement);
+  });
+
+  const hasTurkishChars = /[ÇĞİÖŞÜçğıöşü]/.test(normalized);
+  const hasKnownTurkishWords = /\b(burada|fazla|guzel|saygi|biraz|alan|trafik|nefes|kulak|dosya|denge|dinliyor|dinlemede|yogun|subda|nobette|onayli|memnun|temkinli|sert|mesai|kesildi)\b/i.test(normalized);
+
+  if (hasTurkishChars || hasKnownTurkishWords) {
+    console.warn("Language consistency fallback applied.", { original: value });
+    return UI_TEXT_FALLBACK;
+  }
+
+  return normalized;
+}
+
+function setSafeText(node, value) {
+  node.textContent = normalizeUiText(value);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function getAssistantParagraphs(section) {
+  if (Array.isArray(section?.paragraphs) && section.paragraphs.length) {
+    return section.paragraphs
+      .map((paragraph) => normalizeUiText(paragraph))
+      .filter(Boolean);
+  }
+
+  return normalizeUiText(section?.body || UI_TEXT_FALLBACK)
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+}
+
+function createAssistantParagraphNode(paragraph) {
+  const paragraphNode = document.createElement("p");
+  paragraphNode.className = "assistant-paragraph";
+
+  const markerNode = document.createElement("span");
+  markerNode.className = "assistant-paragraph-marker";
+  markerNode.setAttribute("aria-hidden", "true");
+  markerNode.textContent = "›";
+
+  const textNode = document.createElement("span");
+  textNode.className = "assistant-paragraph-text";
+  textNode.textContent = paragraph;
+
+  paragraphNode.appendChild(markerNode);
+  paragraphNode.appendChild(textNode);
+  return paragraphNode;
+}
+
+function createStudioNoteNode(noteText) {
+  const noteNode = document.createElement("section");
+  noteNode.className = "assistant-studio-note";
+
+  const labelNode = document.createElement("div");
+  labelNode.className = "assistant-studio-note-label";
+  labelNode.textContent = "Studio Note";
+
+  const dividerNode = document.createElement("div");
+  dividerNode.className = "assistant-studio-note-divider";
+  dividerNode.setAttribute("aria-hidden", "true");
+
+  noteNode.appendChild(labelNode);
+  noteNode.appendChild(dividerNode);
+  noteNode.appendChild(createAssistantParagraphNode(noteText));
+
+  return noteNode;
+}
+
+function renderAssistantSections(sections) {
+  if (!assistantLine) return;
+  assistantLine.replaceChildren();
+
+  const safeSections = Array.isArray(sections) && sections.length
+    ? sections
+    : [{ id: "note", body: UI_TEXT_FALLBACK }];
+
+  const fragment = document.createDocumentFragment();
+
+  safeSections.forEach((section) => {
+    const sectionNode = document.createElement("section");
+    sectionNode.className = "assistant-section";
+    sectionNode.dataset.section = section.id || "note";
+
+    getAssistantParagraphs(section).forEach((paragraph) => {
+      const studioNoteMatch = paragraph.match(/^(.*?)(?:\s+)?Studio Note:\s*(.+)$/s);
+
+      if (studioNoteMatch) {
+        const leadingText = studioNoteMatch[1].trim();
+        const studioNoteText = studioNoteMatch[2].trim();
+
+        if (leadingText) {
+          sectionNode.appendChild(createAssistantParagraphNode(leadingText));
+        }
+        if (studioNoteText) {
+          sectionNode.appendChild(createStudioNoteNode(studioNoteText));
+        }
+        return;
+      }
+
+      sectionNode.appendChild(createAssistantParagraphNode(paragraph));
+    });
+
+    fragment.appendChild(sectionNode);
+  });
+
+  assistantLine.appendChild(fragment);
+}
+
+function applyLanguageConsistencyCheck() {
+  [
+    statusBox,
+    statusMirror,
+    statusBadge,
+    qualityBadge,
+    qualityTierText,
+    technicalVerdict,
+    assistantMood,
+  ].filter(Boolean).forEach((node) => {
+    node.textContent = normalizeUiText(node.textContent);
+  });
+
+  if (assistantBaseState?.sections && assistantLine) {
+    renderAssistantSections(assistantBaseState.sections);
+  }
+}
+
+function getFrequencyBalance(data) {
+  return data.frequency_balance || data.frequency_bands || {};
+}
+
+function getSpectrumBandData() {
+  const selectedName = fileInput.files[0]?.name || "";
+  if (currentAnalysisData && currentAnalyzedTrackName && currentAnalyzedTrackName === selectedName) {
+    return currentAnalysisData;
+  }
+  return currentAnalysisData && !selectedName ? currentAnalysisData : {};
+}
+
+function isTrackMapAnalysisReady() {
+  const selectedName = fileInput.files[0]?.name || "";
+  if (!trackMapAnalysisActive || !currentAnalysisData) return false;
+  if (!selectedName) return Boolean(currentAnalyzedTrackName);
+  return currentAnalyzedTrackName === selectedName;
+}
+
+function getQualityClass(score) {
+  if (score >= 88) return "excellent";
+  if (score >= 72) return "good";
+  if (score >= 52) return "average";
+  if (score >= 30) return "weak";
+  return "critical";
+}
+
+function getQualityTier(score) {
+  if (score < 20) return "Poor";
+  if (score < 40) return "Weak";
+  if (score < 60) return "Decent";
+  if (score < 75) return "Good";
+  if (score < 88) return "High Quality";
+  return "Professional / Release Ready";
+}
+
+function getStarString(score) {
+  const filled = clamp(Math.round(score / 20), 0, 5);
+  return "★".repeat(filled) + "☆".repeat(5 - filled);
+}
+
+function setTooltipContent(target, title, body, suggest) {
+  target.dataset.tooltipTitle = normalizeUiText(title);
+  target.dataset.tooltipBody = normalizeUiText(body);
+  target.dataset.tooltipSuggest = normalizeUiText(suggest);
+}
+
+function setStatus(text) {
+  const safeText = normalizeUiText(text);
+  statusBox.textContent = safeText;
+  if (statusMirror) statusMirror.textContent = safeText;
+  if (statusBadge) statusBadge.textContent = safeText;
+}
+
+function setMode(mode) {
+  analysisMode.value = mode;
+  modeDisplay.textContent = mode;
+  trackMode.textContent = mode;
+  modeMenu.querySelectorAll(".mode-option").forEach((option) => {
+    option.classList.toggle("is-active", option.dataset.mode === mode);
+  });
+}
+
+function closeModeMenu() {
+  modeMenu.hidden = true;
+  modeToggle.setAttribute("aria-expanded", "false");
+}
+
+function toggleModeMenu() {
+  const nextHidden = !modeMenu.hidden;
+  modeMenu.hidden = nextHidden;
+  modeToggle.setAttribute("aria-expanded", String(!nextHidden));
+}
+
+function setUploadCondensed(condensed) {
+  uploadPanel.classList.toggle("is-collapsed", condensed);
+}
+
+function updateFileSelectionState(file = fileInput.files[0] || null) {
+  const hasFile = Boolean(file);
+  heroShell.classList.toggle("has-file", hasFile);
+  selectedTrack.classList.toggle("is-active", hasFile);
+  selectedTrack.textContent = hasFile ? file.name : "No file selected";
+  analyzeBtn.disabled = !hasFile;
+  analyzeBtn.classList.toggle("tool-btn-primary", hasFile);
+  analyzeBtn.classList.toggle("tool-btn-secondary", !hasFile);
+  selectTrackBtn.classList.toggle("tool-btn-primary", !hasFile);
+  selectTrackBtn.classList.toggle("tool-btn-secondary", hasFile);
+}
+
+function setAnalysisHeaderState(hasAnalysis) {
+  heroShell.classList.toggle("has-analysis", hasAnalysis);
+  if (utilityActions) utilityActions.hidden = !hasAnalysis;
+  if (!hasAnalysis) {
+    trackMapAnalysisActive = false;
+    qualityBadge.textContent = "Read: Waiting";
+    topbarScore.textContent = "0";
+    trackName.textContent = "-";
+    trackDuration.textContent = "-";
+    trackSampleRate.textContent = "-";
+  }
+}
+
+function setSelectedFile(file) {
+  if (!file) {
+    fileInput.value = "";
+    waveformPreview = null;
+    waveformPreviewFileName = "";
+    trackMapAnalysisActive = false;
+    updateFileSelectionState(null);
+    return;
+  }
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  fileInput.files = transfer.files;
+  updateFileSelectionState(file);
+  trackMapAnalysisActive = false;
+  setAssistantState({
+    mood: "Idle",
+    quality: "average",
+    expression: "neutral",
+    sections: [
+      {
+        id: "ready",
+        body: "Track loaded. Hit listen and I will give you the straight read.",
+      },
+    ],
+  });
+  decodeWaveformPreview(file);
+}
+
+function simplifyWaveform(channelData, samples = 320) {
+  if (!channelData?.length) return [];
+  const blockSize = Math.max(1, Math.floor(channelData.length / samples));
+  const points = [];
+  for (let index = 0; index < samples; index += 1) {
+    const start = index * blockSize;
+    if (start >= channelData.length) break;
+    const end = Math.min(start + blockSize, channelData.length);
+    let peak = 0;
+    for (let cursor = start; cursor < end; cursor += 1) {
+      peak = Math.max(peak, Math.abs(channelData[cursor]));
+    }
+    points.push(peak);
+  }
+  return points;
+}
+
+function buildTrackMapPreview(channelData, durationSeconds, samples = 360) {
+  if (!channelData?.length) return null;
+  const blockSize = Math.max(1, Math.floor(channelData.length / samples));
+  const peaks = [];
+  const rms = [];
+  const transients = [];
+  const clipping = [];
+
+  for (let index = 0; index < samples; index += 1) {
+    const start = index * blockSize;
+    if (start >= channelData.length) break;
+    const end = Math.min(start + blockSize, channelData.length);
+    let peak = 0;
+    let sumSquares = 0;
+    let transientSum = 0;
+    let clipDetected = false;
+    let previous = channelData[start];
+
+    for (let cursor = start; cursor < end; cursor += 1) {
+      const sample = channelData[cursor];
+      const absolute = Math.abs(sample);
+      peak = Math.max(peak, absolute);
+      sumSquares += sample * sample;
+      transientSum += Math.abs(sample - previous);
+      if (absolute >= 0.985) clipDetected = true;
+      previous = sample;
+    }
+
+    const length = Math.max(1, end - start);
+    peaks.push(peak);
+    rms.push(Math.sqrt(sumSquares / length));
+    transients.push(clamp((transientSum / length) * 9.5, 0, 1));
+    clipping.push(clipDetected);
+  }
+
+  const averageRms = rms.reduce((sum, value) => sum + value, 0) / Math.max(1, rms.length);
+  const loudThreshold = averageRms * 1.28;
+  const quietThreshold = averageRms * 0.62;
+  const loudSections = rms.map((value) => value >= loudThreshold);
+  const quietSections = rms.map((value) => value <= quietThreshold);
+
+  return {
+    durationSeconds,
+    peaks,
+    rms,
+    transients,
+    clipping,
+    loudSections,
+    quietSections,
+  };
+}
+
+function formatTimestamp(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const wholeSeconds = Math.round(seconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainder = wholeSeconds % 60;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function averageSlice(values, startIndex, endIndexExclusive) {
+  if (!Array.isArray(values) || !values.length) return 0;
+  const safeStart = clamp(Math.floor(startIndex), 0, Math.max(0, values.length - 1));
+  const requestedEnd = clamp(Math.floor(endIndexExclusive), safeStart + 1, values.length);
+  const safeEnd = Math.max(safeStart + 1, requestedEnd);
+  let sum = 0;
+  for (let index = safeStart; index < safeEnd; index += 1) {
+    sum += safeNumber(values[index], 0);
+  }
+  return sum / Math.max(1, safeEnd - safeStart);
+}
+
+function smoothSeries(values, radius = 3) {
+  if (!Array.isArray(values) || !values.length) return [];
+  return values.map((_, index) => {
+    const start = Math.max(0, index - radius);
+    const end = Math.min(values.length, index + radius + 1);
+    return averageSlice(values, start, end);
+  });
+}
+
+function getTrackMapMinimumSectionSize(preview, pointCount) {
+  const duration = safeNumber(preview?.durationSeconds, 0);
+  const minimumSeconds = Math.max(12, duration * 0.05);
+  const samplesPerSecond = duration > 0 ? pointCount / duration : 0;
+  const minimumByTime = samplesPerSecond > 0 ? Math.round(minimumSeconds * samplesPerSecond) : 0;
+  return clamp(Math.max(18, minimumByTime), 18, Math.max(18, pointCount));
+}
+
+function normalizeSectionLabel(label) {
+  return String(label || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function sectionLabelsMatch(left, right) {
+  const normalizedLeft = normalizeSectionLabel(left);
+  const normalizedRight = normalizeSectionLabel(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  return normalizedLeft === normalizedRight
+    || normalizedLeft.startsWith(normalizedRight)
+    || normalizedRight.startsWith(normalizedLeft);
+}
+
+function classifyTrackSection(section, context) {
+  const {
+    index,
+    totalSections,
+    globalEnergy,
+    globalTransient,
+    previousEnergy,
+    nextEnergy,
+  } = context;
+  const { startRatio, endRatio, averageRms, averageTransient, averageEnergy, contrast } = section;
+  const isOpening = index === 0 || startRatio < 0.14;
+  const isEnding = index === totalSections - 1 || endRatio > 0.9;
+  const relativeEnergy = globalEnergy > 0 ? averageEnergy / globalEnergy : 1;
+  const relativeTransient = globalTransient > 0 ? averageTransient / globalTransient : 1;
+  const neighborLift = Math.max(
+    Math.abs(averageEnergy - previousEnergy),
+    Math.abs(averageEnergy - nextEnergy),
+    contrast,
+  );
+
+  if (isOpening) {
+    return {
+      label: "Opening",
+      confidence: averageEnergy > globalEnergy * 0.78 || contrast > 0.06 ? 0.78 : 0.56,
+    };
+  }
+  if (isEnding && relativeEnergy <= 0.96) {
+    return {
+      label: "Outro",
+      confidence: averageRms < globalEnergy * 1.02 || contrast > 0.05 ? 0.74 : 0.52,
+    };
+  }
+  if (relativeEnergy >= 1.2 && relativeTransient >= 1.04 && neighborLift >= 0.06) {
+    return {
+      label: "Dense Passage",
+      confidence: clamp(0.58 + (neighborLift * 2.4), 0.58, 0.93),
+    };
+  }
+  if (relativeEnergy <= 0.82 && relativeTransient <= 1.08 && neighborLift >= 0.045) {
+    return {
+      label: "Quiet Passage",
+      confidence: clamp(0.54 + (neighborLift * 2), 0.54, 0.88),
+    };
+  }
+  if (relativeEnergy >= 0.92 && relativeEnergy <= 1.12) {
+    return {
+      label: "Main Body",
+      confidence: clamp(0.46 + (contrast * 1.7), 0.42, 0.72),
+    };
+  }
+  return {
+    label: "",
+    confidence: clamp(0.3 + (contrast * 1.5), 0.24, 0.58),
+  };
+}
+
+function mergeTrackMapSections(left, right, totalLength) {
+  const spanLeft = left.endIndex - left.startIndex + 1;
+  const spanRight = right.endIndex - right.startIndex + 1;
+  const totalSpan = Math.max(1, spanLeft + spanRight);
+  return {
+    startIndex: left.startIndex,
+    endIndex: right.endIndex,
+    startRatio: left.startIndex / totalLength,
+    endRatio: (right.endIndex + 1) / totalLength,
+    averageRms: ((left.averageRms * spanLeft) + (right.averageRms * spanRight)) / totalSpan,
+    averageTransient: ((left.averageTransient * spanLeft) + (right.averageTransient * spanRight)) / totalSpan,
+    averageEnergy: ((left.averageEnergy * spanLeft) + (right.averageEnergy * spanRight)) / totalSpan,
+    contrast: Math.max(left.contrast, right.contrast),
+  };
+}
+
+function finalizeTrackMapSectionLabels(sections, globalEnergy, globalTransient) {
+  const genericLabels = ["Section A", "Section B", "Section C"];
+  let genericIndex = 0;
+
+  return sections.map((section, index) => {
+    const previousEnergy = sections[index - 1]?.averageEnergy ?? section.averageEnergy;
+    const nextEnergy = sections[index + 1]?.averageEnergy ?? section.averageEnergy;
+    const classification = classifyTrackSection(section, {
+      index,
+      totalSections: sections.length,
+      globalEnergy,
+      globalTransient,
+      previousEnergy,
+      nextEnergy,
+    });
+    const fallbackLabel = index === 0
+      ? "Opening"
+      : index === sections.length - 1
+        ? "Outro"
+        : genericLabels[Math.min(genericIndex, genericLabels.length - 1)];
+    const label = classification.confidence >= 0.42 && classification.label
+      ? classification.label
+      : fallbackLabel;
+    if (label.startsWith("Section ")) genericIndex += 1;
+    return {
+      ...section,
+      label,
+      confidence: classification.confidence,
+      confidenceLabel: classification.confidence >= 0.72 ? "High" : classification.confidence >= 0.48 ? "Medium" : "Low",
+    };
+  });
+}
+
+function detectTrackMapSections(preview) {
+  const length = preview?.rms?.length || 0;
+  if (!length) return [];
+
+  const smoothedRms = smoothSeries(preview.rms, 4);
+  const smoothedTransients = smoothSeries(preview.transients, 3);
+  const energySeries = smoothedRms.map((value, index) => clamp((value * 0.72) + ((smoothedTransients[index] ?? 0) * 0.28), 0, 1));
+  const globalEnergy = averageSlice(energySeries, 0, energySeries.length);
+  const globalTransient = averageSlice(smoothedTransients, 0, smoothedTransients.length);
+  const minimumSize = getTrackMapMinimumSectionSize(preview, length);
+  const contrastFloor = 0.045;
+  const analysisWindow = Math.max(6, Math.round(minimumSize * 0.45));
+  const boundaries = [0];
+  let lastBoundary = 0;
+
+  for (let index = minimumSize; index <= length - minimumSize; index += 1) {
+    const distanceFromLast = index - lastBoundary;
+    if (distanceFromLast < minimumSize) continue;
+
+    const beforeStart = Math.max(0, index - analysisWindow);
+    const beforeEnergy = averageSlice(energySeries, beforeStart, index);
+    const afterEnergy = averageSlice(energySeries, index, Math.min(length, index + analysisWindow));
+    const beforeTransient = averageSlice(smoothedTransients, beforeStart, index);
+    const afterTransient = averageSlice(smoothedTransients, index, Math.min(length, index + analysisWindow));
+    const energyDelta = Math.abs(afterEnergy - beforeEnergy);
+    const transientDelta = Math.abs(afterTransient - beforeTransient);
+    const totalDelta = energyDelta + (transientDelta * 0.42);
+
+    if (totalDelta < contrastFloor) continue;
+
+    const localPrev = Math.abs(energySeries[index] - energySeries[Math.max(0, index - 1)]);
+    const localNext = Math.abs(energySeries[Math.min(length - 1, index + 1)] - energySeries[index]);
+    if (totalDelta < localPrev + localNext) continue;
+
+    boundaries.push(index);
+    lastBoundary = index;
+  }
+  boundaries.push(length);
+
+  let sections = [];
+  for (let index = 0; index < boundaries.length - 1; index += 1) {
+    const startIndex = boundaries[index];
+    const endExclusive = boundaries[index + 1];
+    if (endExclusive - startIndex <= 0) continue;
+    sections.push({
+      startIndex,
+      endIndex: endExclusive - 1,
+      startRatio: startIndex / length,
+      endRatio: endExclusive / length,
+      averageRms: averageSlice(smoothedRms, startIndex, endExclusive),
+      averageTransient: averageSlice(smoothedTransients, startIndex, endExclusive),
+      averageEnergy: averageSlice(energySeries, startIndex, endExclusive),
+      contrast: Math.abs(
+        averageSlice(energySeries, Math.max(0, startIndex - analysisWindow), startIndex)
+        - averageSlice(energySeries, startIndex, Math.min(length, startIndex + analysisWindow)),
+      ),
+    });
+  }
+
+  const mergeIfNeeded = () => {
+    const cleaned = [];
+    sections.forEach((section) => {
+      const previous = cleaned[cleaned.length - 1];
+      const duration = section.endIndex - section.startIndex + 1;
+      if (!previous) {
+        cleaned.push(section);
+        return;
+      }
+
+      const previousDuration = previous.endIndex - previous.startIndex + 1;
+      const energyGap = Math.abs(previous.averageEnergy - section.averageEnergy);
+      const transientGap = Math.abs(previous.averageTransient - section.averageTransient);
+      if (
+        duration < minimumSize
+        || previousDuration < minimumSize
+        || (energyGap < 0.04 && transientGap < 0.06)
+      ) {
+        cleaned[cleaned.length - 1] = mergeTrackMapSections(previous, section, length);
+        return;
+      }
+      cleaned.push(section);
+    });
+    sections = cleaned;
+  };
+
+  mergeIfNeeded();
+
+  while (sections.length > 5) {
+    let mergeIndex = 0;
+    let smallestContrast = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < sections.length - 1; index += 1) {
+      const current = sections[index];
+      const next = sections[index + 1];
+      const contrast = Math.abs(current.averageEnergy - next.averageEnergy)
+        + (Math.abs(current.averageTransient - next.averageTransient) * 0.35);
+      if (contrast < smallestContrast) {
+        smallestContrast = contrast;
+        mergeIndex = index;
+      }
+    }
+    sections.splice(mergeIndex, 2, mergeTrackMapSections(sections[mergeIndex], sections[mergeIndex + 1], length));
+  }
+
+  sections = finalizeTrackMapSectionLabels(sections, globalEnergy, globalTransient);
+
+  const merged = [];
+  sections.forEach((section) => {
+    const previous = merged[merged.length - 1];
+    if (previous && sectionLabelsMatch(previous.label, section.label)) {
+      merged[merged.length - 1] = {
+        ...mergeTrackMapSections(previous, section, length),
+        label: previous.label.length >= section.label.length ? previous.label : section.label,
+        confidence: Math.max(previous.confidence, section.confidence),
+        confidenceLabel: previous.confidence >= section.confidence ? previous.confidenceLabel : section.confidenceLabel,
+      };
+      return;
+    }
+    merged.push(section);
+  });
+
+  return merged.slice(0, 5);
+}
+
+function buildTrackMapEvents(preview) {
+  const points = preview?.peaks || [];
+  const rms = preview?.rms || [];
+  const transients = preview?.transients || [];
+  const clipping = preview?.clipping || [];
+  const durationSeconds = safeNumber(preview?.durationSeconds, 0);
+  const events = [];
+  const sampleCount = points.length;
+  const samplesPerSecond = durationSeconds > 0 ? sampleCount / durationSeconds : 0;
+  const clusterWindow = samplesPerSecond > 0 ? Math.max(1, Math.round(samplesPerSecond)) : 1;
+
+  points.forEach((value, index) => {
+    if (clipping[index]) {
+      const transient = transients[index] ?? 0;
+      const severityWeight = 2.2 + (value * 1.3) + ((rms[index] ?? 0) * 0.7) + (transient * 0.9);
+      events.push({
+        index,
+        startIndex: index,
+        endIndex: index,
+        severity: "clip",
+        peak: value,
+        rms: rms[index] ?? 0,
+        transient,
+        score: severityWeight,
+      });
+      return;
+    }
+    if (value >= 0.92) {
+      const transient = transients[index] ?? 0;
+      const severityWeight = 1 + (value * 1.15) + ((rms[index] ?? 0) * 0.45) + (transient * 0.75);
+      events.push({
+        index,
+        startIndex: index,
+        endIndex: index,
+        severity: "peak",
+        peak: value,
+        rms: rms[index] ?? 0,
+        transient,
+        score: severityWeight,
+      });
+    }
+  });
+
+  if (!events.length) return [];
+
+  const sorted = [...events].sort((left, right) => left.index - right.index);
+  const clusters = [];
+  sorted.forEach((event) => {
+    const previous = clusters[clusters.length - 1];
+    if (previous && (event.index - previous.endIndex) <= clusterWindow) {
+      previous.endIndex = event.index;
+      previous.peak = Math.max(previous.peak, event.peak);
+      previous.rms = Math.max(previous.rms, event.rms);
+      previous.transient = Math.max(previous.transient, event.transient);
+      previous.score += event.score;
+      previous.eventCount += 1;
+      previous.severity = previous.severity === "clip" || event.severity === "clip" ? "clip" : "peak";
+      previous.index = Math.round((previous.startIndex + previous.endIndex) / 2);
+      return;
+    }
+    clusters.push({
+      ...event,
+      eventCount: 1,
+    });
+  });
+
+  const maxCoverageRatio = 0.15;
+  const maxCoverageSamples = Math.max(1, Math.floor(sampleCount * maxCoverageRatio));
+  const ranked = [...clusters].sort((left, right) => right.score - left.score);
+  const selected = [];
+  let coverageUsed = 0;
+
+  ranked.forEach((cluster) => {
+    const width = Math.max(1, cluster.endIndex - cluster.startIndex + 1);
+    if (coverageUsed + width > maxCoverageSamples && selected.length) return;
+    selected.push(cluster);
+    coverageUsed += width;
+  });
+
+  if (!selected.length) {
+    selected.push(ranked[0]);
+  }
+
+  return selected
+    .sort((left, right) => left.startIndex - right.startIndex)
+    .map((cluster) => ({
+      ...cluster,
+      startRatio: cluster.startIndex / Math.max(1, sampleCount - 1),
+      endRatio: cluster.endIndex / Math.max(1, sampleCount - 1),
+      widthRatio: Math.max(1, cluster.endIndex - cluster.startIndex + 1) / Math.max(1, sampleCount),
+    }));
+}
+
+function buildTrackMapState(preview, data) {
+  if (!preview?.peaks?.length) return null;
+
+  const stereo = data?.stereo_correlation === null ? null : safeNumber(data?.stereo_correlation, null);
+  const widthScore = stereo === null
+    ? null
+    : clamp((1 - stereo) * 100, 0, 100);
+  const averageRms = preview.rms.reduce((sum, value) => sum + value, 0) / Math.max(1, preview.rms.length);
+  const overallPeak = Math.max(...preview.peaks, 0.0001);
+  const overallLufs = safeNumber(data?.approximate_lufs, NaN);
+  const overallPeakDbfs = safeNumber(data?.peak_dbfs, NaN);
+  const sections = detectTrackMapSections(preview);
+  const events = buildTrackMapEvents(preview);
+
+  const inspection = preview.peaks.map((peakValue, index) => {
+    const rmsValue = preview.rms[index] ?? 0;
+    const transientValue = preview.transients[index] ?? 0;
+    const time = (index / Math.max(1, preview.peaks.length - 1)) * (preview.durationSeconds || 0);
+    const localPeakDbfs = 20 * Math.log10(Math.max(peakValue, 0.0001));
+    const localLufs = Number.isFinite(overallLufs)
+      ? overallLufs + (20 * Math.log10(Math.max(rmsValue, 0.0001)) - 20 * Math.log10(Math.max(averageRms, 0.0001)))
+      : NaN;
+
+    return {
+      index,
+      time,
+      label: sections.find((section) => index >= section.startIndex && index <= section.endIndex)?.label || "Section",
+      peakDbfs: Number.isFinite(overallPeakDbfs)
+        ? overallPeakDbfs + (localPeakDbfs - 20 * Math.log10(Math.max(overallPeak, 0.0001)))
+        : localPeakDbfs,
+      lufs: localLufs,
+      stereoWidth: widthScore,
+      density: Math.round(clamp(((rmsValue / Math.max(averageRms, 0.0001)) * 55) + (transientValue * 45), 0, 100)),
+    };
+  });
+
+  return { sections, events, inspection };
+}
+
+function getTrackMapIssueDescriptor(data, evaluation) {
+  if (!evaluation?.assessmentSignals) return null;
+  const weakest = Object.values(evaluation.assessmentSignals).reduce((worst, item) => item.score < worst.score ? item : worst, evaluation.assessmentSignals.peakSafety);
+  const bands = getFrequencyBalance(data);
+  const lowMidValue = safeNumber(bands.low_mid);
+  const crest = safeNumber(data?.crest_factor_db, NaN);
+  const lufs = safeNumber(data?.approximate_lufs, NaN);
+
+  if (weakest.key === "peakSafety") {
+    return {
+      type: "peak",
+      title: "Peak Pressure",
+      description: "This is the hottest event area. The ceiling is already making mix decisions here.",
+    };
+  }
+  if (weakest.key === "lowEndControl" || ((weakest.key === "tonalBalance" || weakest.key === "harshness") && lowMidValue >= 0.18)) {
+    return {
+      type: "lowmid",
+      title: "Low-Mid Weight",
+      description: "This broad section is carrying the most body, which is usually where the low-mid traffic starts calling too many shots.",
+    };
+  }
+  if (weakest.key === "dynamics" && Number.isFinite(lufs) && lufs < -14) {
+    return {
+      type: "quiet",
+      title: "Low-Energy Pocket",
+      description: "This calmer stretch is the part most likely making the record feel smaller or more withdrawn.",
+    };
+  }
+  if (weakest.key === "dynamics" || evaluation.categoryScores.transientDensity >= 68 || (Number.isFinite(crest) && crest >= 10)) {
+    return {
+      type: "dense",
+      title: "Dense Transient Pocket",
+      description: "This area is stacking the most attack and movement, so it is where the mix gets busiest fastest.",
+    };
+  }
+  return null;
+}
+
+function buildTrackMapIssueHighlights(trackMapState, issueDescriptor) {
+  if (!trackMapState?.sections?.length || !issueDescriptor) return [];
+  const { sections, events, inspection } = trackMapState;
+
+  if (issueDescriptor.type === "peak" && events?.length) {
+    const peakEvent = [...events].sort((left, right) => {
+      const leftWeight = (left.severity === "clip" ? 2 : 1) + safeNumber(left.rms, 0);
+      const rightWeight = (right.severity === "clip" ? 2 : 1) + safeNumber(right.rms, 0);
+      return rightWeight - leftWeight;
+    })[0];
+    const focusSection = sections.find((section) => peakEvent.index >= section.startIndex && peakEvent.index <= section.endIndex) || sections[0];
+    const eventRatio = peakEvent.index / Math.max(1, (inspection?.length || 1) - 1);
+    return [{
+      type: "peak",
+      startRatio: clamp(Math.min(focusSection.startRatio, eventRatio - 0.015), 0, 0.98),
+      endRatio: clamp(Math.max(focusSection.endRatio, eventRatio + 0.015), 0.02, 1),
+      label: issueDescriptor.title,
+      description: issueDescriptor.description,
+    }];
+  }
+
+  let targetSection = sections[0];
+  if (issueDescriptor.type === "lowmid") {
+    targetSection = sections.reduce((best, section) => section.averageEnergy > best.averageEnergy ? section : best, sections[0]);
+  } else if (issueDescriptor.type === "quiet") {
+    targetSection = sections.reduce((best, section) => section.averageEnergy < best.averageEnergy ? section : best, sections[0]);
+  } else if (issueDescriptor.type === "dense") {
+    targetSection = sections.reduce((best, section) => section.averageTransient > best.averageTransient ? section : best, sections[0]);
+  }
+
+  return [{
+    type: issueDescriptor.type,
+    startRatio: targetSection.startRatio,
+    endRatio: targetSection.endRatio,
+    label: issueDescriptor.title,
+    description: issueDescriptor.description,
+  }];
+}
+
+async function decodeWaveformPreview(file) {
+  const decodeToken = ++previewDecodeToken;
+  waveformPreview = null;
+  waveformPreviewFileName = "";
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error("Web Audio API unavailable");
+    const audioContext = new AudioContextClass();
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const decoded = await audioContext.decodeAudioData(arrayBuffer);
+      if (decodeToken !== previewDecodeToken) return;
+      console.log("Audio decoded");
+
+      const mono = new Float32Array(decoded.length);
+      for (let channel = 0; channel < decoded.numberOfChannels; channel += 1) {
+        const channelData = decoded.getChannelData(channel);
+        for (let sample = 0; sample < decoded.length; sample += 1) {
+          mono[sample] += channelData[sample] / decoded.numberOfChannels;
+        }
+      }
+
+      waveformPreview = buildTrackMapPreview(mono, decoded.duration) || {
+        durationSeconds: decoded.duration,
+        peaks: simplifyWaveform(mono),
+        rms: [],
+        transients: [],
+        clipping: [],
+        loudSections: [],
+        quietSections: [],
+      };
+      waveformPreviewFileName = file.name;
+      console.log("Waveform points:", waveformPreview?.peaks?.length || 0);
+    } finally {
+      audioContext.close().catch(() => {});
+    }
+  } catch (error) {
+    if (decodeToken !== previewDecodeToken) return;
+    waveformPreview = null;
+    waveformPreviewFileName = "";
+    console.warn("Waveform preview decode failed.", error);
+  }
+
+  reportSection.hidden = false;
+  renderFrequencyBands(getSpectrumBandData());
+}
+
+function computePeakSafetyScore(peakDbfs) {
+  if (!Number.isFinite(peakDbfs)) return 0;
+  if (peakDbfs > -0.1) return 5;
+  if (peakDbfs > -0.5) return 18;
+  if (peakDbfs > -1.0) return 34;
+  if (peakDbfs > -2.0) return 60;
+  if (peakDbfs > -3.0) return 76;
+  if (peakDbfs > -6.0) return 84;
+  return 78;
+}
+
+function computeLoudnessBalanceScore(lufs, mode) {
+  if (!Number.isFinite(lufs)) return 0;
+  if (mode === "pre_master") {
+    if (lufs < -24) return 42;
+    if (lufs < -20) return 60;
+    if (lufs <= -14) return 86;
+    if (lufs <= -11) return 68;
+    if (lufs <= -9) return 38;
+    return 18;
+  }
+  if (lufs < -16) return 50;
+  if (lufs < -14) return 68;
+  if (lufs <= -9) return 88;
+  if (lufs <= -8) return 62;
+  if (lufs <= -7) return 34;
+  return 14;
+}
+
+function computeCrestFactorScore(crest) {
+  if (!Number.isFinite(crest)) return 0;
+  if (crest < 4) return 8;
+  if (crest < 6) return 24;
+  if (crest < 8) return 50;
+  if (crest < 10) return 74;
+  if (crest <= 14) return 88;
+  if (crest <= 18) return 76;
+  return 62;
+}
+
+function computeStereoUsageScore(stereo, channels) {
+  if (channels < 2 || stereo === null || !Number.isFinite(stereo)) return 70;
+  if (stereo < -0.15) return 6;
+  if (stereo < 0) return 16;
+  if (stereo < 0.15) return 42;
+  if (stereo < 0.3) return 64;
+  if (stereo <= 0.92) return 84;
+  if (stereo <= 0.98) return 72;
+  return 58;
+}
+
+function computeFrequencyBalanceScore(bands) {
+  const ranges = {
+    sub: [0.03, 0.14],
+    bass: [0.08, 0.22],
+    low_mid: [0.1, 0.2],
+    mid: [0.16, 0.36],
+    high_mid: [0.14, 0.28],
+    high: [0.06, 0.2],
+  };
+  let penalty = 0;
+  for (const [band, [min, max]] of Object.entries(ranges)) {
+    const value = Number(bands[band] ?? 0);
+    if (value < min) penalty += ((min - value) / min) * 14;
+    else if (value > max) penalty += ((value - max) / max) * 14;
+  }
+  return Math.round(clamp(100 - penalty, 0, 100));
+}
+
+function computeHarshnessScore(bands) {
+  const high = Number(bands.high ?? 0);
+  const highMid = Number(bands.high_mid ?? 0);
+  const combined = high + highMid;
+  if (high > 0.34 || combined > 0.56) return 14;
+  if (high > 0.28 || combined > 0.48) return 34;
+  if (high > 0.22 || combined > 0.42) return 56;
+  if (combined < 0.16) return 52;
+  return 84;
+}
+
+function computeMudScore(bands) {
+  const lowMid = Number(bands.low_mid ?? 0);
+  const bass = Number(bands.bass ?? 0);
+  if (lowMid > 0.3) return 12;
+  if (lowMid > 0.24) return 28;
+  if (lowMid > 0.2) return 52;
+  if (lowMid < 0.06 && bass < 0.08) return 46;
+  return 84;
+}
+
+function computeMonoCompatibilityScore(stereo) {
+  if (stereo === null || !Number.isFinite(stereo)) return 78;
+  if (stereo < -0.15) return 4;
+  if (stereo < 0) return 14;
+  if (stereo < 0.15) return 38;
+  if (stereo < 0.25) return 58;
+  return 86;
+}
+
+function computeDynamicRangeScore(crest, lufs, mode) {
+  if (!Number.isFinite(crest) || !Number.isFinite(lufs)) return 0;
+  let score = computeCrestFactorScore(crest);
+  if (mode === "final_master" && lufs > -8 && crest < 8) score -= 18;
+  if (mode === "pre_master" && lufs > -12 && crest < 9) score -= 12;
+  return Math.round(clamp(score, 0, 100));
+}
+
+function buildAssessmentSignals(data, mode) {
+  const bands = getFrequencyBalance(data);
+  const peakDbfs = safeNumber(data.peak_dbfs, NaN);
+  const rmsDbfs = safeNumber(data.rms_dbfs, NaN);
+  const lufs = safeNumber(data.approximate_lufs, NaN);
+  const crest = safeNumber(data.crest_factor_db, NaN);
+  const channels = safeNumber(data.channels, 1);
+  const stereo = data.stereo_correlation === null ? null : safeNumber(data.stereo_correlation, null);
+  const sideRatioRaw = safeNumber(data.stereo_analysis?.side_ratio, NaN);
+  const sideRatio = Number.isFinite(sideRatioRaw) ? sideRatioRaw : null;
+
+  const lowEnd = safeNumber(bands.sub) + safeNumber(bands.bass);
+  const topEnd = safeNumber(bands.high_mid) + safeNumber(bands.high);
+  const subValue = safeNumber(bands.sub);
+  const bassValue = safeNumber(bands.bass);
+  const lowMidValue = safeNumber(bands.low_mid);
+  const midValue = safeNumber(bands.mid);
+  const highMidValue = safeNumber(bands.high_mid);
+  const highValue = safeNumber(bands.high);
+
+  const peakSafetyScore = computePeakSafetyScore(peakDbfs);
+  const tonalBalanceScore = computeFrequencyBalanceScore(bands);
+  const stereoUsageScore = channels < 2
+    ? 72
+    : Math.round(clamp(
+      computeStereoUsageScore(stereo, channels) * 0.65
+        + computeMonoCompatibilityScore(stereo) * 0.25
+        + (sideRatio === null ? 72 : clamp(100 - Math.abs(sideRatio - 0.22) * 260, 20, 92)) * 0.1,
+      0,
+      100,
+    ));
+  const dynamicsScore = Math.round(clamp(
+    computeDynamicRangeScore(crest, lufs, mode) * 0.55
+      + computeLoudnessBalanceScore(lufs, mode) * 0.25
+      + clamp(100 - Math.abs(rmsDbfs + 14) * 5.5, 18, 92) * 0.2,
+    0,
+    100,
+  ));
+  const harshnessScore = computeHarshnessScore(bands);
+
+  let lowEndControlScore = 84;
+  if (subValue > 0.14) lowEndControlScore = 28;
+  else if (lowEnd < 0.17) lowEndControlScore = 34;
+  else if (bassValue > 0.24 || lowMidValue > 0.22) lowEndControlScore = 46;
+  else if (Math.abs(subValue - bassValue) > 0.11) lowEndControlScore = 62;
+  lowEndControlScore = Math.round(clamp(lowEndControlScore, 0, 100));
+
+  const indicators = [
+    {
+      key: "peakSafety",
+      label: "Peak Safety",
+      score: peakSafetyScore,
+      currentValue: formatMetric(peakDbfs, " dBFS"),
+      reason:
+        peakDbfs > -0.5
+          ? "Peak is too close to full scale."
+          : peakDbfs > -1
+            ? "Headroom is narrow for safe encoding."
+            : peakDbfs > -3
+              ? "Headroom is usable but not generous."
+              : "Peak margin is controlled.",
+      metrics: [`Peak ${formatMetric(peakDbfs, " dBFS")}`, mode === "final_master" ? "Target at least -1 dBTP equivalent margin." : "Pre-master margin should stay around -3 to -6 dBFS."],
+      suggestion: mode === "final_master"
+        ? "Leave at least -1 dBTP before release export."
+        : "Leave -3 to -6 dBFS of headroom before mastering.",
+    },
+    {
+      key: "tonalBalance",
+      label: "Tonal Balance",
+      score: tonalBalanceScore,
+      currentValue: `${Math.round(lowEnd * 100)} / ${Math.round(midValue * 100)} / ${Math.round(topEnd * 100)}%`,
+      reason:
+        lowMidValue > 0.22
+          ? "Low-mid buildup is skewing the balance."
+          : topEnd < 0.16
+            ? "Top-end air is underrepresented."
+            : highValue > 0.2 || highMidValue > 0.28
+              ? "Upper bands are starting to dominate."
+              : "The low, mid, and high zones are reasonably aligned.",
+      metrics: [
+        `Low-end ${Math.round(lowEnd * 100)}%`,
+        `Mid ${Math.round(midValue * 100)}%`,
+        `Top-end ${Math.round(topEnd * 100)}%`,
+      ],
+      suggestion: "Rebalance the dominant zone before making broad loudness moves.",
+    },
+    {
+      key: "stereoUsage",
+      label: "Stereo Usage",
+      score: stereoUsageScore,
+      currentValue: channels < 2 ? "Mono source" : `${stereo?.toFixed(2) ?? "N/A"} correlation`,
+      reason:
+        channels < 2
+          ? "Source is mono, so width is intentionally limited."
+          : stereo !== null && stereo < 0
+            ? "Negative correlation points to phase risk."
+            : stereo !== null && stereo < 0.2
+              ? "Width is present but the image is narrow."
+              : stereo !== null && stereo > 0.95
+                ? "The image is wide but center-heavy."
+                : "Stereo spread is controlled and phase-safe.",
+      metrics: [
+        `Correlation ${stereo === null ? "N/A" : stereo.toFixed(2)}`,
+        sideRatio === null ? "Side ratio unavailable" : `Side ratio ${sideRatio.toFixed(2)}`,
+        `Mono compatibility ${computeMonoCompatibilityScore(stereo)}/100`,
+      ],
+      suggestion: channels < 2 ? "Use arrangement or ambience for width if needed." : "Balance width against mono safety before widening further.",
+    },
+    {
+      key: "dynamics",
+      label: "Dynamics",
+      score: dynamicsScore,
+      currentValue: `${formatMetric(crest, " dB")} crest`,
+      reason:
+        crest < 6
+          ? "Dynamics are heavily constrained."
+          : lufs > -8 && crest < 8
+            ? "Loudness is high relative to transient freedom."
+            : rmsDbfs > -10
+              ? "Average energy is high and transient contrast is reduced."
+              : "Dynamic movement is largely intact.",
+      metrics: [
+        `Crest ${formatMetric(crest, " dB")}`,
+        `RMS ${formatMetric(rmsDbfs, " dBFS")}`,
+        `LUFS ${formatMetric(lufs)}`,
+      ],
+      suggestion: "Reduce limiting if loudness is flattening transient contrast.",
+    },
+    {
+      key: "harshness",
+      label: "Harshness",
+      score: harshnessScore,
+      currentValue: `${Math.round((highMidValue + highValue) * 100)}% upper-band share`,
+      reason:
+        highValue > 0.2 || highMidValue > 0.28
+          ? "High-mid and high energy are edging toward harshness."
+          : topEnd < 0.16
+            ? "The top end is restrained and reads darker than balanced."
+            : "Upper-band energy is in a stable range.",
+      metrics: [
+        `High-mid ${Math.round(highMidValue * 100)}%`,
+        `High ${Math.round(highValue * 100)}%`,
+        `Top-end total ${Math.round(topEnd * 100)}%`,
+      ],
+      suggestion: "Trim the upper-mid bite or add air only after checking translation.",
+    },
+    {
+      key: "lowEndControl",
+      label: "Low-End Control",
+      score: lowEndControlScore,
+      currentValue: `${Math.round(lowEnd * 100)}% low-end share`,
+      reason:
+        subValue > 0.14
+          ? "Sub energy is dominating the low-end picture."
+          : lowEnd < 0.17
+            ? "The foundation is light for a full-range playback."
+            : lowMidValue > 0.22
+              ? "Bass and low-mid overlap are reducing definition."
+              : "Sub and bass weight are reasonably controlled.",
+      metrics: [
+        `Sub ${Math.round(subValue * 100)}%`,
+        `Bass ${Math.round(bassValue * 100)}%`,
+        `Low-mid ${Math.round(lowMidValue * 100)}%`,
+      ],
+      suggestion: "Separate sub, bass, and low-mid roles before adding more weight.",
+    },
+  ];
+
+  return Object.fromEntries(indicators.map((item) => [item.key, item]));
+}
+
+function buildIndicatorTooltip(indicator) {
+  return {
+    title: `${indicator.label}: ${indicator.score}/100`,
+    body: `Current value: ${indicator.currentValue}. Reason: ${indicator.reason} Metrics: ${indicator.metrics.join(" | ")}`,
+    suggest: `Suggestion: ${indicator.suggestion}`,
+  };
+}
+
+function getTonalZoneScore(label, value) {
+  const ranges = {
+    "Low End": [18, 36],
+    "Mid Core": [22, 48],
+    "Top End": [14, 32],
+  };
+  const [min, max] = ranges[label];
+  if (value < min) return Math.round(clamp(100 - ((min - value) / min) * 100, 8, 100));
+  if (value > max) return Math.round(clamp(100 - ((value - max) / max) * 100, 8, 100));
+  return 86;
+}
+
+function evaluateQuality(data, mode) {
+  const assessmentSignals = buildAssessmentSignals(data, mode);
+  const bands = getFrequencyBalance(data);
+  const peakDbfs = Number(data.peak_dbfs);
+  const lufs = Number(data.approximate_lufs);
+  const crest = Number(data.crest_factor_db);
+  const stereo = data.stereo_correlation === null ? null : Number(data.stereo_correlation);
+  const channels = Number(data.channels ?? 1);
+
+  const categoryScores = {
+    peakSafety: assessmentSignals.peakSafety.score,
+    loudnessBalance: computeLoudnessBalanceScore(lufs, mode),
+    crestFactor: computeCrestFactorScore(crest),
+    dynamicRange: assessmentSignals.dynamics.score,
+    stereoUsage: assessmentSignals.stereoUsage.score,
+    monoCompatibility: computeMonoCompatibilityScore(stereo),
+    frequencyBalance: assessmentSignals.tonalBalance.score,
+    harshness: assessmentSignals.harshness.score,
+    mud: computeMudScore(bands),
+    transientDensity: Math.round(clamp((computeCrestFactorScore(crest) * 0.7) + (computeDynamicRangeScore(crest, lufs, mode) * 0.3), 0, 100)),
+    lowEndControl: assessmentSignals.lowEndControl.score,
+  };
+
+  let overallScore = Math.round(
+    Object.entries(categoryScores)
+      .filter(([key]) => key in SCORE_WEIGHTS)
+      .reduce((sum, [key, value]) => sum + value * SCORE_WEIGHTS[key], 0),
+  );
+
+  if (peakDbfs > -0.5) overallScore -= 12;
+  else if (peakDbfs > -1) overallScore -= 6;
+  if ((bands.high ?? 0) > 0.3) overallScore -= 8;
+  if ((bands.low_mid ?? 0) > 0.24) overallScore -= 8;
+  if (stereo !== null && stereo < 0) overallScore -= 18;
+  if (lufs > -8 && crest < 7) overallScore -= 10;
+
+  overallScore = Math.round(clamp(overallScore, 0, 100));
+  return {
+    assessmentSignals,
+    categoryScores,
+    overallScore,
+    qualityTier: getQualityTier(overallScore),
+    qualityClass: getQualityClass(overallScore),
+  };
+}
+
+function getMetricCards(data, evaluation, mode) {
+  return [
+    { key: "lufs", label: "LUFS", value: formatMetric(data.approximate_lufs), score: computeLoudnessBalanceScore(Number(data.approximate_lufs), mode) },
+    { key: "peak", label: "Peak", value: formatMetric(data.peak_dbfs, " dBFS"), score: computePeakSafetyScore(Number(data.peak_dbfs)) },
+    { key: "rms", label: "RMS", value: formatMetric(data.rms_dbfs, " dBFS"), score: clamp(100 - Math.abs(Number(data.rms_dbfs) + 12) * 8, 10, 90) },
+    { key: "crest", label: "Crest", value: formatMetric(data.crest_factor_db, " dB"), score: computeCrestFactorScore(Number(data.crest_factor_db)) },
+    { key: "range", label: "Dynamic Range", value: `${evaluation.categoryScores.dynamicRange}/100`, score: evaluation.categoryScores.dynamicRange },
+    { key: "stereo", label: "Stereo", value: `${evaluation.categoryScores.stereoUsage}/100`, score: evaluation.categoryScores.stereoUsage },
+    { key: "mono", label: "Mono", value: `${evaluation.categoryScores.monoCompatibility}/100`, score: evaluation.categoryScores.monoCompatibility },
+    { key: "transient", label: "Transient", value: `${evaluation.categoryScores.transientDensity}/100`, score: evaluation.categoryScores.transientDensity },
+  ];
+}
+
+function humanizeWarningText(warning) {
+  const normalized = normalizeUiText(warning);
+  const map = {
+    too_much_low_mid: "Low-mid build-up is excessive.",
+    "too much low_mid": "Low-mid build-up is excessive.",
+    weak_sub: "Sub energy is weaker than expected.",
+    "weak sub": "Sub energy is weaker than expected.",
+    harsh_highs: "High frequencies are reading harsh.",
+    "harsh highs": "High frequencies are reading harsh.",
+    dark_mix: "The mix is tilted dark.",
+    "dark mix": "The mix is tilted dark.",
+    thin_mix: "The mix feels thin in the low end.",
+    "thin mix": "The mix feels thin in the low end.",
+  };
+  return map[normalized.toLowerCase().replace(/\s+/g, "_")] || normalized;
+}
+
+function getTooltipCopy(key, data, evaluation) {
+  const map = {
+    lufs: ["LUFS", `Current loudness is ${formatMetric(data.approximate_lufs)} LUFS.`, "More limiting may increase loudness but reduce dynamics."],
+    peak: ["Peak", `Peak is ${formatMetric(data.peak_dbfs, " dBFS")} from full scale.`, "0 dBFS proximity may cause clipping after encoding."],
+    rms: ["RMS", `RMS is ${formatMetric(data.rms_dbfs, " dBFS")} and reflects average signal energy.`, "Higher RMS without control often raises fatigue and reduces headroom."],
+    crest: ["Crest Factor", `Crest factor is ${formatMetric(data.crest_factor_db, " dB")}.`, "Lower crest factor generally means stronger compression or limiting."],
+    range: ["Dynamic Range", `Dynamic range score is ${evaluation.categoryScores.dynamicRange}/100.`, "Preserve movement before increasing loudness."],
+    stereo: ["Stereo Usage", `Stereo score is ${evaluation.categoryScores.stereoUsage}/100.`, "Wide stereo is useful only if phase remains stable."],
+    mono: ["Mono Compatibility", `Mono compatibility score is ${evaluation.categoryScores.monoCompatibility}/100.`, "Reduce phase-heavy width if fold-down becomes unstable."],
+    transient: ["Transient Density", `Transient density score is ${evaluation.categoryScores.transientDensity}/100.`, "Preserve attack if the mix feels flattened."],
+  };
+  return map[key];
+}
+
+function renderHeaderMeta(fileName, data, mode, evaluation) {
+  trackName.textContent = fileName || "Audio file";
+  trackDuration.textContent = data.duration_seconds ? `${data.duration_seconds.toFixed(2)}s` : "N/A";
+  trackSampleRate.textContent = data.sample_rate ? `${data.sample_rate} Hz` : "N/A";
+  trackMode.textContent = mode;
+  topbarScore.textContent = `${evaluation.overallScore}/100`;
+}
+
+function classifyMrKulakIssue(analysis) {
+  const peak = safeNumber(analysis?.peak_dbfs, NaN);
+  const lufs = safeNumber(analysis?.approximate_lufs, NaN);
+  const crest = safeNumber(analysis?.crest_factor_db, NaN);
+  const stereo = analysis?.stereo_correlation === null ? null : safeNumber(analysis?.stereo_correlation, null);
+  const bands = analysis?.frequency_bands || analysis?.frequency_balance || {};
+
+  const sub = safeNumber(bands.sub, 0);
+  const bass = safeNumber(bands.bass, 0);
+  const lowMid = safeNumber(bands.low_mid, 0);
+  const highMid = safeNumber(bands.high_mid, 0);
+  const high = safeNumber(bands.high, 0);
+  const lowMass = sub + bass + lowMid;
+  const topLift = highMid + high;
+
+  if (peak > -0.35) return "peak_hot";
+  if (lufs > -9 && crest < 7) return "over_limited";
+  if (lowMid > 0.2 || lowMass > 0.52) return "low_mid";
+  if (sub + bass < 0.12 || sub < 0.03) return "thin_low_end";
+  if (highMid > 0.2 || high > 0.16 || topLift > 0.36) return "harsh_top";
+  if (stereo !== null && stereo < 0.2) return "narrow_image";
+  if (topLift < 0.14) return "dark_tilt";
+  if (crest < 6) return "flat_dynamics";
+  return "general_refine";
+}
+
+function buildMrKulakStrength(analysis) {
+  const peak = safeNumber(analysis?.peak_dbfs, NaN);
+  const lufs = safeNumber(analysis?.approximate_lufs, NaN);
+  const crest = safeNumber(analysis?.crest_factor_db, NaN);
+  const stereo = analysis?.stereo_correlation === null ? null : safeNumber(analysis?.stereo_correlation, null);
+  const bands = analysis?.frequency_bands || analysis?.frequency_balance || {};
+
+  const sub = safeNumber(bands.sub, 0);
+  const bass = safeNumber(bands.bass, 0);
+  const lowMid = safeNumber(bands.low_mid, 0);
+  const highMid = safeNumber(bands.high_mid, 0);
+  const high = safeNumber(bands.high, 0);
+  const lowMass = sub + bass + lowMid;
+  const topLift = highMid + high;
+
+  if (crest >= 8.5) {
+    return "The transients still have life, so the track is not being sat on from the start.";
+  }
+  if (stereo !== null && stereo >= 0.3 && stereo <= 0.9) {
+    return "The stereo image is usable, and it is not falling apart the moment it leaves the center.";
+  }
+  if (lowMid <= 0.2 && lowMass >= 0.17 && lowMass <= 0.46) {
+    return "The low end is carrying its share without completely swallowing the arrangement.";
+  }
+  if (topLift >= 0.16 && topLift <= 0.32) {
+    return "There is enough top detail here to keep the mix readable without forcing the issue.";
+  }
+  if (peak <= -1 && lufs <= -10) {
+    return "Nothing feels fundamentally broken in the gain structure, which gives you room to make deliberate moves.";
+  }
+  return "Nothing feels fundamentally broken, and that matters because this still responds like a mix you can steer.";
+}
+
+function buildMrKulakConcern(issueKey) {
+  const concernMap = {
+    peak_hot: "The main issue is the ceiling. The signal is arriving too hot, so the last stage is being asked to solve problems that should have been calmed earlier.",
+    over_limited: "The main issue is density. The mix feels pinned down, so the song loses some motion before the final stage even has a chance to help.",
+    low_mid: "The main issue is low-mid congestion. Too much of the body is speaking from the same spot, so the mix starts feeling crowded instead of solid.",
+    thin_low_end: "The main issue is the foundation. The bottom is not handing the song enough weight, so the record feels smaller than it should.",
+    harsh_top: "The main issue is upper-band pressure. The front edge is pushing harder than the song needs, so detail turns into fatigue.",
+    narrow_image: "The main issue is width management. The mix stays too tucked into the middle, so the arrangement never fully opens up.",
+    dark_tilt: "The main issue is tonal lift. Useful detail is being held back, so the mix reads more closed than intentional.",
+    flat_dynamics: "The main issue is movement. Too much of the track is speaking at one intensity, so the record stops breathing naturally.",
+    general_refine: "The main issue is focus. The mix is close, but one broad correction still needs to be made before the finish will feel settled.",
+  };
+  return concernMap[issueKey] || concernMap.general_refine;
+}
+
+function buildMrKulakStudioNote(analysis) {
+  const issueKey = classifyMrKulakIssue(analysis);
+  const noteMap = {
+    peak_hot: "Studio Note: Feed the limiter a calmer signal and leave headroom before the final stage.",
+    over_limited: "Studio Note: Feed the limiter a calmer signal and let the bus breathe before asking for more level.",
+    low_mid: "Studio Note: Revisit low-mid cleanup and check the kick-bass handoff before making broader bus moves.",
+    thin_low_end: "Studio Note: Check the kick-bass handoff and rebuild the foundation before chasing size elsewhere.",
+    harsh_top: "Studio Note: Ease the upper-mid pressure and make sure bus processing is not exaggerating the bite.",
+    narrow_image: "Studio Note: Check the mono fold before widening and keep the center carrying the song.",
+    dark_tilt: "Studio Note: Revisit the tonal balance and make sure useful detail is not being buried before the final stage.",
+    flat_dynamics: "Studio Note: Back off the compression path that is flattening the movement and let the groove breathe again.",
+    general_refine: "Studio Note: Make one clear correction, then listen again before touching the final stage.",
+  };
+  return noteMap[issueKey] || noteMap.general_refine;
+}
+
+function buildMrKulakCommentaryParts(analysis) {
+  const strength = buildMrKulakStrength(analysis);
+  const concern = buildMrKulakConcern(classifyMrKulakIssue(analysis));
+  const studioNote = buildMrKulakStudioNote(analysis);
+
+  return {
+    strength,
+    concern,
+    studioNote,
+    paragraphs: [strength, concern, studioNote],
+  };
+}
+
+function buildMrKulakCommentary(analysis) {
+  return buildMrKulakCommentaryParts(analysis).paragraphs.join(" ");
+}
+
+function getAssistantState(data, evaluation) {
+  const indicators = evaluation.assessmentSignals;
+  const weakest = Object.values(indicators).reduce((worst, item) => item.score < worst.score ? item : worst, indicators.peakSafety);
+  const strongest = Object.values(indicators).reduce((best, item) => item.score > best.score ? item : best, indicators.peakSafety);
+
+  let mood = "Reserved";
+  let expression = "neutral";
+  if (weakest.score < 30) {
+    mood = "Raised Eyebrow";
+    expression = weakest.key === "peakSafety" ? "concerned" : "skeptical";
+  } else if (evaluation.overallScore >= 82) {
+    mood = "Nodding";
+    expression = "calm";
+  } else if (evaluation.overallScore >= 68) {
+    mood = "Interested";
+    expression = "approving";
+  }
+
+  const commentaryAnalysis = {
+    peak_dbfs: data.peak_dbfs,
+    approximate_lufs: data.approximate_lufs,
+    crest_factor_db: data.crest_factor_db,
+    stereo_correlation: data.stereo_correlation,
+    frequency_bands: getFrequencyBalance(data),
+    warnings: data.basic_warnings || data.warnings || [],
+  };
+  const commentary = buildMrKulakCommentary(commentaryAnalysis);
+  const commentaryParts = buildMrKulakCommentaryParts(commentaryAnalysis);
+
+  return {
+    mood,
+    quality: getQualityClass(evaluation.overallScore),
+    expression,
+    sections: [
+      {
+        id: "commentary",
+        body: commentary,
+        paragraphs: commentaryParts.paragraphs,
+      },
+    ],
+    strongest,
+    weakest,
+    firstFix: commentary,
+    firstFixArea: weakest.label,
+  };
+}
+
+function renderAssistant(data, evaluation) {
+  const state = getAssistantState(data, evaluation);
+  state.trackIssue = getTrackMapIssueDescriptor(data, evaluation);
+  assistantBaseState = state;
+  assistantDock.dataset.quality = state.quality;
+  assistantDock.dataset.expression = state.expression;
+  setSafeText(assistantMood, state.mood);
+  renderAssistantSections(state.sections);
+  const bands = getFrequencyBalance(data);
+  const lowEnd = Math.round((safeNumber(bands.sub) + safeNumber(bands.bass)) * 100);
+  const topEnd = Math.round((safeNumber(bands.high_mid) + safeNumber(bands.high)) * 100);
+  const spaceRead = data.stereo_correlation === null
+    ? "Center-Locked"
+    : evaluation.assessmentSignals.stereoUsage.score < 45
+      ? "Narrow Shoulders"
+      : evaluation.assessmentSignals.stereoUsage.score > 75
+        ? "Open Sides"
+        : "Room To Move";
+  const weightRead = lowEnd > 34 ? "Heavy Footed" : lowEnd < 18 ? "Light Grip" : "Good Weight";
+  const toneRead = topEnd > 34 ? "Bright Nerve" : topEnd < 16 ? "Dim Corners" : "Clear Face";
+  const finishRead = evaluation.overallScore >= 82 ? "Settled" : evaluation.overallScore >= 68 ? "Close" : "Still Arguing";
+  assistantMetrics.innerHTML = [
+    ["Weight", weightRead, getQualityClass(evaluation.assessmentSignals.lowEndControl.score)],
+    ["Space", spaceRead, getQualityClass(evaluation.assessmentSignals.stereoUsage.score)],
+    ["Tone", toneRead, getQualityClass(evaluation.assessmentSignals.tonalBalance.score)],
+    ["Finish", finishRead, getQualityClass(evaluation.overallScore)],
+  ].map(([label, value, quality]) => `
+    <span class="assistant-metric quality-${quality}">
+      <span class="assistant-metric-label">${label}</span>
+      <strong class="assistant-metric-value">${value}</strong>
+    </span>
+  `).join("");
+  applyTranslationProtection();
+}
+
+function setAssistantState(state) {
+  assistantBaseState = state;
+  assistantDock.dataset.quality = state.quality;
+  assistantDock.dataset.expression = state.expression || "neutral";
+  setSafeText(assistantMood, state.mood);
+  renderAssistantSections(state.sections);
+  applyTranslationProtection();
+}
+
+function renderOverview(data, evaluation) {
+  const hueMap = { critical: 2, weak: 22, average: 42, good: 112, excellent: 182 };
+  scoreRing.style.setProperty("--score-angle", `${Math.round((evaluation.overallScore / 100) * 360)}deg`);
+  scoreRing.style.setProperty("--score-hue", hueMap[evaluation.qualityClass]);
+  scoreRing.dataset.quality = evaluation.qualityClass;
+  overallScore.textContent = String(evaluation.overallScore);
+  qualityBadge.textContent = `Read: ${evaluation.qualityTier}`;
+  qualityBadge.dataset.quality = evaluation.qualityClass;
+  qualityTierText.textContent = evaluation.qualityTier;
+  qualityStars.textContent = getStarString(evaluation.overallScore);
+  technicalVerdict.textContent =
+    evaluation.overallScore >= 88 ? "Translating well" :
+      evaluation.overallScore >= 70 ? "Solid direction" :
+        evaluation.overallScore >= 50 ? "Needs another pass" : "Still fighting itself";
+  setTooltipContent(scoreRing, "Overall Score", `Weighted technical evaluation across loudness, dynamics, stereo, and tonal balance. Current score: ${evaluation.overallScore}/100.`, "Resolve severe peak, phase, or tonal penalties before chasing loudness.");
+
+  const bands = getFrequencyBalance(data);
+  const tonalItems = [
+    ["Low End", Math.round((Number(bands.sub ?? 0) + Number(bands.bass ?? 0)) * 100), "Combined sub and bass share."],
+    ["Mid Core", Math.round((Number(bands.low_mid ?? 0) + Number(bands.mid ?? 0)) * 100), "Low-mid and mid content define density and clarity."],
+    ["Top End", Math.round((Number(bands.high_mid ?? 0) + Number(bands.high ?? 0)) * 100), "Top end controls bite and air."],
+  ];
+  tonalSummary.innerHTML = tonalItems.map(([label, value, note]) => `
+    <div class="summary-chip quality-${getQualityClass(getTonalZoneScore(label, value))}" data-tooltip-title="${label}" data-tooltip-body="${note} Current level: ${value}%. Zone quality: ${getTonalZoneScore(label, value)}/100." data-tooltip-suggest="Judge this zone on speakers and headphones before making broad EQ moves.">
+      <div class="summary-chip-head">
+        <span class="summary-chip-label">${label}</span>
+        <strong class="summary-chip-value">${value}%</strong>
+      </div>
+      <div class="summary-chip-bar">
+        <span class="summary-chip-fill" style="width:${Math.max(10, value)}%"></span>
+      </div>
+      <div class="summary-chip-heat">
+        ${Array.from({ length: 10 }, (_, index) => `<span class="summary-chip-cell ${index < Math.max(1, Math.round(value / 10)) ? "is-active" : ""}"></span>`).join("")}
+      </div>
+    </div>
+  `).join("");
+}
+
+function renderMetrics(data, evaluation, mode) {
+  summaryCards.innerHTML = "";
+  getMetricCards(data, evaluation, mode).forEach((metric) => {
+    const quality = getQualityClass(metric.score);
+    const card = document.createElement("article");
+    card.className = `metric-card quality-${quality}`;
+    const meter = Array.from({ length: 12 }, (_, index) => `<span class="mini-bar ${index < Math.round(metric.score / 8.34) ? "is-active" : ""}"></span>`).join("");
+    card.innerHTML = `
+      <span class="metric-label">${metric.label}</span>
+      <strong class="metric-value">${metric.value}</strong>
+      <div class="metric-mini-strip">${meter}</div>
+      <span class="metric-state">${quality}</span>
+    `;
+    const [title, body, suggest] = getTooltipCopy(metric.key, data, evaluation);
+    setTooltipContent(card, title, body, suggest);
+    summaryCards.appendChild(card);
+  });
+}
+
+function getBandSuggestion(name, value) {
+  if (name === "high" && value < 0.06) return "High frequencies are weak. Mix may sound dark on smaller speakers.";
+  if (name === "high" && value > 0.2) return "Top end is elevated. Check for brittle playback on bright systems.";
+  if (name === "low_mid" && value > 0.2) return "Low-mid energy is elevated. Reduce buildup if translation feels cloudy.";
+  if (name === "sub" && value < 0.03) return "Sub content is light. Low-end weight may feel reduced on full-range systems.";
+  return "Current balance is within the expected zone for this band.";
+}
+
+function drawTrackMapCanvas(canvas, preview, showAnalysisMarkers) {
+  if (!canvas || !preview?.peaks?.length) return false;
+  const trackMapState = currentTrackMapState;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return false;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  const context = canvas.getContext("2d");
+  if (!context) return false;
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  context.clearRect(0, 0, rect.width, rect.height);
+
+  const centerY = rect.height * 0.52;
+  const paddingX = 10;
+  const usableWidth = rect.width - paddingX * 2;
+  const maxAmplitude = rect.height * 0.32;
+  const points = preview.peaks;
+  const rms = preview.rms.length ? preview.rms : points.map((value) => value * 0.68);
+  const transients = preview.transients.length ? preview.transients : points.map((value) => clamp(value * 1.1, 0, 1));
+  const events = trackMapState?.events || [];
+
+  context.fillStyle = "rgba(255,255,255,0.02)";
+  context.fillRect(0, 0, rect.width, rect.height);
+
+  context.strokeStyle = "rgba(255,255,255,0.05)";
+  context.lineWidth = 1;
+  for (let y = 16; y < rect.height; y += 20) {
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(rect.width, y);
+    context.stroke();
+  }
+  const verticalDivisions = 8;
+  for (let division = 1; division < verticalDivisions; division += 1) {
+    const x = paddingX + (usableWidth / verticalDivisions) * division;
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x, rect.height);
+    context.stroke();
+  }
+
+  context.strokeStyle = "rgba(255,255,255,0.09)";
+  context.beginPath();
+  context.moveTo(0, centerY);
+  context.lineTo(rect.width, centerY);
+  context.stroke();
+
+  const mirroredWave = new Path2D();
+  points.forEach((point, index) => {
+    const x = paddingX + (index / Math.max(1, points.length - 1)) * usableWidth;
+    const amplitude = point * maxAmplitude;
+    const y = centerY - amplitude;
+    if (index === 0) mirroredWave.moveTo(x, y);
+    else mirroredWave.lineTo(x, y);
+  });
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const x = paddingX + (index / Math.max(1, points.length - 1)) * usableWidth;
+    const amplitude = points[index] * maxAmplitude;
+    mirroredWave.lineTo(x, centerY + amplitude);
+  }
+  mirroredWave.closePath();
+
+  const fillGradient = context.createLinearGradient(0, centerY - maxAmplitude, 0, centerY + maxAmplitude);
+  if (showAnalysisMarkers) {
+    fillGradient.addColorStop(0, "rgba(229, 237, 247, 0.12)");
+    fillGradient.addColorStop(0.5, "rgba(111, 182, 214, 0.22)");
+    fillGradient.addColorStop(1, "rgba(229, 237, 247, 0.12)");
+  } else {
+    fillGradient.addColorStop(0, "rgba(215, 223, 233, 0.08)");
+    fillGradient.addColorStop(0.5, "rgba(140, 156, 173, 0.14)");
+    fillGradient.addColorStop(1, "rgba(215, 223, 233, 0.08)");
+  }
+  context.fillStyle = fillGradient;
+  context.fill(mirroredWave);
+
+  context.strokeStyle = showAnalysisMarkers ? "rgba(238, 243, 249, 0.64)" : "rgba(223, 229, 236, 0.46)";
+  context.lineWidth = 1.15;
+  context.beginPath();
+  points.forEach((point, index) => {
+    const x = paddingX + (index / Math.max(1, points.length - 1)) * usableWidth;
+    const amplitude = point * maxAmplitude;
+    const y = centerY - amplitude;
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  });
+  context.stroke();
+
+  context.beginPath();
+  points.forEach((point, index) => {
+    const x = paddingX + (index / Math.max(1, points.length - 1)) * usableWidth;
+    const amplitude = point * maxAmplitude;
+    const y = centerY + amplitude;
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  });
+  context.stroke();
+
+  if (showAnalysisMarkers) {
+    context.strokeStyle = "rgba(93, 207, 215, 0.66)";
+    context.lineWidth = 1.2;
+    transients.forEach((value, index) => {
+      if (value < 0.16) return;
+      const x = paddingX + (index / Math.max(1, transients.length - 1)) * usableWidth;
+      const transientHeight = 8 + value * 18;
+      context.beginPath();
+      context.moveTo(x, 4);
+      context.lineTo(x, 4 + transientHeight);
+      context.stroke();
+    });
+
+    events.forEach((event) => {
+      const startX = paddingX + (event.startIndex / Math.max(1, points.length - 1)) * usableWidth;
+      const endX = paddingX + (event.endIndex / Math.max(1, points.length - 1)) * usableWidth;
+      const x = paddingX + (event.index / Math.max(1, points.length - 1)) * usableWidth;
+      const isClip = event.severity === "clip";
+      const clusterWidth = Math.max(2, endX - startX);
+      context.strokeStyle = isClip ? "rgba(244, 106, 99, 0.67)" : "rgba(255, 232, 170, 0.82)";
+
+      if (clusterWidth > 3.5) {
+        const clusterTop = isClip ? 8 : centerY - maxAmplitude - (12 + (event.rms ?? 0) * 10);
+        const clusterHeight = isClip ? rect.height - 16 : 8 + (event.transient ?? 0) * 8;
+        context.fillStyle = isClip ? "rgba(244, 106, 99, 0.12)" : "rgba(255, 232, 170, 0.10)";
+        context.strokeRect(startX, clusterTop, clusterWidth, clusterHeight);
+        context.fillRect(startX, clusterTop, clusterWidth, clusterHeight);
+      } else {
+        context.lineWidth = isClip ? 1.5 : 1.15;
+        context.beginPath();
+        if (isClip) {
+          context.moveTo(x, 0);
+          context.lineTo(x, rect.height);
+        } else {
+          const markerHeight = 10 + (event.rms ?? 0) * 10;
+          context.moveTo(x, centerY - maxAmplitude - markerHeight);
+          context.lineTo(x, centerY - maxAmplitude - 2);
+        }
+        context.stroke();
+      }
+    });
+  }
+
+  console.log("Track map rendered");
+  return true;
+}
+
+function scheduleTrackMapRender(canvas, preview, showAnalysisMarkers, attempt = 0) {
+  if (!canvas || !preview?.peaks?.length) return;
+  requestAnimationFrame(() => {
+    const rendered = drawTrackMapCanvas(canvas, preview, showAnalysisMarkers);
+    if (!rendered && attempt < 8) {
+      scheduleTrackMapRender(canvas, preview, showAnalysisMarkers, attempt + 1);
+    }
+  });
+}
+
+function updateTrackMapSectionLabelVisibility(container) {
+  if (!container) return;
+  const readabilityPadding = 18;
+
+  container.querySelectorAll(".track-map-section").forEach((button) => {
+    const label = button.querySelector("span");
+    if (!label) return;
+
+    label.hidden = false;
+    const availableWidth = button.clientWidth - readabilityPadding;
+    const requiredWidth = Math.ceil(label.scrollWidth);
+    const isReadable = availableWidth >= requiredWidth;
+
+    label.hidden = !isReadable;
+    button.classList.toggle("is-label-hidden", !isReadable);
+  });
+}
+
+function renderFrequencyBands(data) {
+  const preview = waveformPreview;
+  const duration = preview?.durationSeconds;
+  const isPreviewState = !isTrackMapAnalysisReady();
+  currentTrackMapState = buildTrackMapState(preview, data);
+  const issueHighlights = !isPreviewState
+    ? buildTrackMapIssueHighlights(currentTrackMapState, assistantBaseState?.trackIssue || null)
+    : [];
+  const sectionMarkup = currentTrackMapState?.sections?.map((section) => `
+    <button
+      class="track-map-section"
+      type="button"
+      style="left:${(section.startRatio * 100).toFixed(2)}%; width:${((section.endRatio - section.startRatio) * 100).toFixed(2)}%;"
+      data-start-index="${section.startIndex}"
+      data-tooltip-title="${section.label}"
+      data-tooltip-body="${formatTimestamp(section.startRatio * (duration || 0))} - ${formatTimestamp(section.endRatio * (duration || 0))}. Energy: ${Math.round(section.averageEnergy * 100)}%. Density: ${Math.round(section.averageTransient * 100)}%. Confidence: ${section.confidenceLabel}."
+      data-tooltip-suggest="Use section labels to jump between major structural changes in the song."
+    >
+      <span>${section.label}</span>
+    </button>
+  `).join("") || "";
+  const issueMarkup = issueHighlights.map((issue) => `
+    <div
+      class="track-map-issue track-map-issue-${issue.type}"
+      style="left:${(issue.startRatio * 100).toFixed(2)}%; width:${Math.max(1.2, (issue.endRatio - issue.startRatio) * 100).toFixed(2)}%;"
+      data-tooltip-title="${issue.label}"
+      data-tooltip-body="${issue.description}"
+      data-tooltip-suggest="This is a broad pointer from Mr. Kulak, not a fake exact timestamp."
+    ></div>
+  `).join("");
+  frequencyBands.innerHTML = `
+    <div class="track-map-view ${isPreviewState ? "is-preview" : "is-analyzed"}" data-tooltip-title="Track Map" data-tooltip-body="${isPreviewState ? "Waveform preview of the uploaded audio file. Run a listen pass to activate transient, event, and section markers." : "Timeline overview of the uploaded track. The waveform is the foundation, transients lead the eye, and event markers call out strong peaks and clips."}" data-tooltip-suggest="${isPreviewState ? "Run a listen pass to turn the preview into a full navigation map." : "Use this map to jump between sections and inspect level, width, and density over time."}">
+      <canvas class="track-map-canvas"></canvas>
+      ${preview?.peaks?.length ? "" : '<div class="track-map-empty">No waveform data available</div>'}
+      ${preview?.peaks?.length && isPreviewState ? '<div class="track-map-preview-note">Waveform preview — run listen for sections and event markers</div>' : ""}
+      <div class="track-map-overlay">
+        <div class="track-map-bounds">
+          <span>Start</span>
+          <span>${duration ? `${duration.toFixed(1)}s` : "Timeline"}</span>
+          <span>End</span>
+        </div>
+        <div class="track-map-issues">${issueMarkup}</div>
+        <div class="track-map-sections">${sectionMarkup}</div>
+        <div class="track-map-cursor" hidden></div>
+        <div class="track-map-inspector" hidden>
+          <div class="track-map-inspector-time">0:00</div>
+          <div class="track-map-inspector-grid">
+            <span data-field="lufs">LUFS --</span>
+            <span data-field="peak">Peak --</span>
+            <span data-field="stereo">Width --</span>
+            <span data-field="density">Density --</span>
+          </div>
+        </div>
+        <div class="track-map-legend">
+          <span class="track-map-key track-map-key-wave">Waveform</span>
+          <span class="track-map-key track-map-key-transient ${isPreviewState ? "is-disabled" : ""}">Transient</span>
+          <span class="track-map-key track-map-key-event ${isPreviewState ? "is-disabled" : ""}">Events</span>
+          <span class="track-map-key track-map-key-section ${isPreviewState ? "is-disabled" : ""}">Sections</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const trackMapView = frequencyBands.querySelector(".track-map-view");
+  const canvas = frequencyBands.querySelector(".track-map-canvas");
+  if (!preview?.peaks?.length) {
+    currentTrackMapState = null;
+    return;
+  }
+  scheduleTrackMapRender(canvas, preview, !isPreviewState);
+  requestAnimationFrame(() => {
+    updateTrackMapSectionLabelVisibility(frequencyBands.querySelector(".track-map-sections"));
+  });
+
+  const cursor = frequencyBands.querySelector(".track-map-cursor");
+  const inspector = frequencyBands.querySelector(".track-map-inspector");
+  const timeNode = frequencyBands.querySelector(".track-map-inspector-time");
+  const lufsNode = frequencyBands.querySelector('[data-field="lufs"]');
+  const peakNode = frequencyBands.querySelector('[data-field="peak"]');
+  const stereoNode = frequencyBands.querySelector('[data-field="stereo"]');
+  const densityNode = frequencyBands.querySelector('[data-field="density"]');
+
+  const updateInspector = (clientX) => {
+    if (!trackMapView || !currentTrackMapState?.inspection?.length) return;
+    const rect = trackMapView.getBoundingClientRect();
+    const ratio = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+    const index = Math.round(ratio * (currentTrackMapState.inspection.length - 1));
+    const point = currentTrackMapState.inspection[index];
+    if (!point) return;
+
+    cursor.hidden = false;
+    inspector.hidden = false;
+    cursor.style.left = `${ratio * 100}%`;
+    inspector.style.left = `${clamp(ratio * 100, 12, 88)}%`;
+    timeNode.textContent = `${formatTimestamp(point.time)} • ${point.label}`;
+    lufsNode.textContent = `LUFS ${formatMetric(point.lufs)}`;
+    peakNode.textContent = `Peak ${formatMetric(point.peakDbfs, " dBFS")}`;
+    stereoNode.textContent = `Width ${point.stereoWidth === null ? "Mono" : `${Math.round(point.stereoWidth)}%`}`;
+    densityNode.textContent = `Density ${point.density}%`;
+  };
+
+  trackMapView.addEventListener("pointermove", (event) => {
+    updateInspector(event.clientX);
+  });
+
+  trackMapView.addEventListener("pointerleave", () => {
+    cursor.hidden = true;
+    inspector.hidden = true;
+  });
+
+  frequencyBands.querySelectorAll(".track-map-section").forEach((button) => {
+    button.addEventListener("click", () => {
+      const startIndex = Number(button.dataset.startIndex);
+      if (!Number.isFinite(startIndex) || !canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const ratio = startIndex / Math.max(1, (preview.peaks.length - 1));
+      updateInspector(rect.left + (rect.width * ratio));
+    });
+  });
+}
+
+function buildStereoHistory(preview, widthScore, stereo) {
+  if (!preview?.peaks?.length) return [];
+  const sampleCount = Math.min(24, preview.peaks.length);
+  const bucketSize = Math.max(1, Math.floor(preview.peaks.length / sampleCount));
+  const maxRms = Math.max(...preview.rms, 0.0001);
+
+  return Array.from({ length: sampleCount }, (_, index) => {
+    const start = index * bucketSize;
+    const end = Math.min(preview.peaks.length, start + bucketSize);
+    const rmsSlice = preview.rms.slice(start, end);
+    const transientSlice = preview.transients.slice(start, end);
+    const avgRms = rmsSlice.reduce((sum, value) => sum + value, 0) / Math.max(1, rmsSlice.length || 1);
+    const avgTransient = transientSlice.reduce((sum, value) => sum + value, 0) / Math.max(1, transientSlice.length || 1);
+    const energy = clamp(((avgRms / maxRms) * 0.7) + (avgTransient * 0.3), 0.18, 1);
+    const localWidth = clamp(widthScore * (0.72 + (energy * 0.42)), stereo === null ? 0 : 8, 100);
+    return {
+      width: Math.round(localWidth),
+      energy,
+    };
+  });
+}
+
+function getStereoInterpretation({ widthScore, monoSafety, phaseRisk, stereo }) {
+  const labels = [];
+  if (stereo === null || widthScore < 26) labels.push("Focused Center");
+  else if (widthScore < 58) labels.push("Balanced Width");
+  else labels.push("Very Wide Image");
+
+  if (monoSafety >= 76) labels.push("Mono Compatible");
+  else if (monoSafety >= 56) labels.push("Watch Mono Fold");
+  else labels.push("Phase Sensitive");
+
+  if (stereo !== null && stereo > 0.88) labels.push("Center Weighted");
+  return [...new Set(labels)].slice(0, 3);
+}
+
+function getPhaseState(stereo) {
+  if (stereo === null || stereo > 0.7) return { label: "Mono Safe", key: "safe" };
+  if (stereo > 0.4) return { label: "Balanced", key: "balanced" };
+  if (stereo > 0.15) return { label: "Wide", key: "wide" };
+  return { label: "Phase Risk", key: "risk" };
+}
+
+function renderPhaseScope(data, evaluation) {
+  const stereo = data.stereo_correlation === null ? null : safeNumber(data.stereo_correlation, null);
+  const sideRatioRaw = safeNumber(data.stereo_analysis?.side_ratio, NaN);
+  const sideRatio = Number.isFinite(sideRatioRaw)
+    ? sideRatioRaw
+    : stereo === null
+      ? 0.02
+      : clamp((1 - stereo) * 0.26, 0.02, 0.32);
+  const monoSafety = evaluation.categoryScores.monoCompatibility;
+  const phaseState = getPhaseState(stereo);
+  const qualityClass = getQualityClass(monoSafety);
+  const correlationRatio = stereo === null ? 1 : clamp((stereo + 1) / 2, 0, 1);
+  const driftAngle = clamp((sideRatio - 0.16) * 160, -26, 26);
+  const vectorLength = clamp(24 + ((1 - correlationRatio) * 28), 22, 52);
+  const vectorThickness = clamp(10 + ((1 - correlationRatio) * 8), 10, 18);
+  const ringStrength = clamp(0.26 + ((1 - correlationRatio) * 0.42), 0.26, 0.74);
+  const foldLabel = monoSafety >= 76 ? "Stable" : monoSafety >= 56 ? "Watch" : "Risk";
+  const sideDrift = sideRatio <= 0.12 ? "Tight" : sideRatio <= 0.22 ? "Neutral" : "Pulled Wide";
+
+  if (phaseStatusTag) {
+    phaseStatusTag.textContent = phaseState.label;
+    phaseStatusTag.dataset.state = phaseState.key;
+  }
+
+  phaseScope.innerHTML = `
+    <div class="phase-panel quality-${qualityClass}" data-tooltip-title="Phase Scope" data-tooltip-body="Correlation ${stereo === null ? "Mono" : stereo.toFixed(2)}. Mono compatibility ${monoSafety}/100. Side estimate ${Math.round(sideRatio * 100)}%. The cloud widens as side activity and phase tension increase." data-tooltip-suggest="${phaseState.key === "risk" ? "Pull decorrelated width back and check the mono fold before doing anything else." : "Use the cloud to judge whether width is helping translation or just showing off."}">
+      <div class="phase-stage phase-state-${phaseState.key}">
+        <div class="phase-ring" style="--ring-strength:${ringStrength};"></div>
+        <div class="phase-safe-diamond"></div>
+        <div class="phase-center-line"></div>
+        <div class="phase-cross-line"></div>
+        <div class="phase-axis-label phase-axis-top">MONO</div>
+        <div class="phase-axis-label phase-axis-left">L</div>
+        <div class="phase-axis-label phase-axis-right">R</div>
+        <div class="phase-axis-label phase-axis-bottom">SIDES</div>
+        <div class="phase-vector-cloud" style="--vector-angle:${driftAngle}deg; --vector-length:${vectorLength}px; --vector-thickness:${vectorThickness}px;">
+          <span class="phase-vector-core"></span>
+          <span class="phase-vector-blur"></span>
+          <span class="phase-vector-trace"></span>
+        </div>
+        <div class="phase-correlation-arc">
+          <span class="phase-correlation-fill" style="transform: rotate(${clamp((correlationRatio * 180) - 90, -90, 90)}deg);"></span>
+        </div>
+      </div>
+      <div class="phase-readouts">
+        <span class="phase-readout">
+          <span class="phase-readout-label">Corr</span>
+          <strong class="phase-readout-value">${stereo === null ? "Mono" : stereo.toFixed(2)}</strong>
+        </span>
+        <span class="phase-readout">
+          <span class="phase-readout-label">Mono Fold</span>
+          <strong class="phase-readout-value">${foldLabel}</strong>
+        </span>
+        <span class="phase-readout">
+          <span class="phase-readout-label">Side Drift</span>
+          <strong class="phase-readout-value">${sideDrift}</strong>
+        </span>
+      </div>
+    </div>
+  `;
+}
+
+function renderStereoVisualization(data, evaluation) {
+  const stereo = data.stereo_correlation === null ? null : Number(data.stereo_correlation);
+  const sideRatioRaw = safeNumber(data.stereo_analysis?.side_ratio, NaN);
+  const sideRatio = Number.isFinite(sideRatioRaw) ? sideRatioRaw : null;
+  const stereoUsageRaw = safeNumber(data.stereo_analysis?.stereo_usage_score, NaN);
+  const widthScore = Number.isFinite(stereoUsageRaw)
+    ? clamp(stereoUsageRaw, 0, 100)
+    : stereo === null
+      ? 0
+      : clamp((1 - stereo) * 100, 0, 100);
+  const monoSafety = stereo === null ? 100 : clamp(((stereo + 1) / 2) * 100, 0, 100);
+  const phaseRisk = stereo !== null && stereo < 0.25 ? "High" : stereo !== null && stereo < 0.55 ? "Medium" : "Low";
+  const scopeWidth = clamp(widthScore, stereo === null ? 0 : 10, 100);
+  const stereoQuality = getQualityClass(evaluation.categoryScores.stereoUsage);
+  const phaseRiskClass = phaseRisk.toLowerCase();
+  const cloudWidth = clamp(18 + (scopeWidth * 0.64), stereo === null ? 16 : 26, 84);
+  const cloudHeight = clamp(18 + (scopeWidth * 0.32), 24, 54);
+  const cloudTop = clamp(50 - ((stereo === null ? 0 : stereo) * 8), 38, 54);
+  const centerEnergy = clamp(100 - widthScore, 10, 100);
+  const sideEnergy = clamp(widthScore + ((sideRatio ?? 0.22) * 90), 12, 100);
+  const stereoRead = (() => {
+    const labels = [];
+    if (stereo === null || widthScore < 26) labels.push("Focused Center");
+    else if (widthScore < 58) labels.push("Balanced Width");
+    else labels.push("Very Wide Image");
+
+    if (monoSafety >= 76) labels.push("Mono Compatible");
+    else if (monoSafety >= 56) labels.push("Watch Mono Fold");
+    else labels.push("Phase Sensitive");
+
+    if (stereo !== null && stereo > 0.88) labels.push("Center Weighted");
+    return [...new Set(labels)].slice(0, 3);
+  })();
+  stereoScoreText.textContent = `${evaluation.categoryScores.stereoUsage}/100`;
+  stereoViz.innerHTML = `
+    <div class="stereo-scope quality-${stereoQuality}" data-tooltip-title="Stereo Cloud" data-tooltip-body="Width ${Math.round(widthScore)}%, correlation ${stereo === null ? "Mono" : stereo.toFixed(2)}, mono safety ${Math.round(monoSafety)}%, phase risk ${phaseRisk.toLowerCase()}. The cloud shows how centered or side-heavy the mix feels." data-tooltip-suggest="Read the cloud first. A tight cloud means center focus; a wider cloud means stronger side activity.">
+      <div class="stereo-scope-grid"></div>
+      <div class="stereo-scope-header">
+        <span class="stereo-scope-side">EXTREME SIDES</span>
+        <span class="stereo-scope-center">CENTER</span>
+        <span class="stereo-scope-side">EXTREME SIDES</span>
+      </div>
+      <div class="stereo-zone stereo-zone-center">CENTER</div>
+      <div class="stereo-zone stereo-zone-midwide">MID-WIDE</div>
+      <div class="stereo-zone stereo-zone-sides">EXTREME SIDES</div>
+      <div class="stereo-width-zone" style="width:${scopeWidth}%;"></div>
+      <div class="stereo-center-line"></div>
+      <div class="stereo-axis stereo-axis-horizontal"></div>
+      <div class="stereo-axis stereo-axis-vertical-left"></div>
+      <div class="stereo-axis stereo-axis-vertical-right"></div>
+      <div class="stereo-cloud" style="width:${cloudWidth}%; height:${cloudHeight}px; top:${cloudTop}%; --center-energy:${centerEnergy}; --side-energy:${sideEnergy};">
+        <div class="stereo-cloud-core"></div>
+        <div class="stereo-cloud-haze"></div>
+        <div class="stereo-cloud-lobe left"></div>
+        <div class="stereo-cloud-lobe right"></div>
+      </div>
+      <div class="stereo-correlation-ribbon">
+        <span>Corr ${stereo === null ? "Mono" : stereo.toFixed(2)}</span>
+        <span>Mono ${Math.round(monoSafety)}%</span>
+      </div>
+    </div>
+    <div class="stereo-interpretation">
+      ${stereoRead.map((label) => `<span class="stereo-tag">${label}</span>`).join("")}
+    </div>
+    <div class="stereo-readouts">
+      <div class="stereo-readout-card">
+        <span class="stereo-readout-label">Width</span>
+        <strong class="stereo-readout-value">${Math.round(widthScore)}%</strong>
+      </div>
+      <div class="stereo-readout-card">
+        <span class="stereo-readout-label">Mono Safety</span>
+        <strong class="stereo-readout-value">${Math.round(monoSafety)}%</strong>
+      </div>
+      <div class="stereo-readout-card">
+        <span class="stereo-readout-label">Correlation</span>
+        <strong class="stereo-readout-value">${stereo === null ? "Mono" : stereo.toFixed(2)}</strong>
+      </div>
+      <div class="stereo-readout-card phase-risk-${phaseRiskClass}">
+        <span class="stereo-readout-label">Phase Risk</span>
+        <strong class="stereo-readout-value">${phaseRisk}</strong>
+      </div>
+    </div>
+  `;
+  setTooltipContent(
+    stereoViz,
+    "Stereo Field",
+    stereo === null
+      ? "Mono signal path detected. Correlation stays center-locked, width is minimal, mono safety is high, and phase risk is low."
+      : `Correlation is ${stereo.toFixed(2)}. Width reads ${Math.round(widthScore)}%, mono safety ${Math.round(monoSafety)}%, and phase risk is ${phaseRisk.toLowerCase()}. Correlation shows how similar left and right are; lower values feel wider, while higher values fold to mono more safely.`,
+    stereo === null
+      ? "Add width intentionally with ambience or side content if the source should feel broader."
+      : phaseRisk === "High"
+        ? "Reduce decorrelated widening and re-check mono collapse."
+        : "Balance width against center focus before widening further.",
+  );
+
+  renderPhaseScope(data, evaluation);
+}
+
+function renderDynamicsVisualization(data, evaluation, mode) {
+  const crest = Number(data.crest_factor_db);
+  const lufs = Number(data.approximate_lufs);
+  const peak = Number(data.peak_dbfs);
+  const rms = Number(data.rms_dbfs);
+  const dynamicScore = evaluation.categoryScores.dynamicRange;
+  const dynamicQuality = getQualityClass(dynamicScore);
+  const crestOpen = clamp(((crest - 4) / 10) * 100, 0, 100);
+  const pressureScore = clamp((((rms - peak) + 4) / 8) * 100, 0, 100);
+  const loudnessPressure = clamp(((lufs + 18) / 10) * 100, 0, 100);
+  const transientScore = clamp(
+    Number.isFinite(evaluation.categoryScores.transientDensity)
+      ? evaluation.categoryScores.transientDensity
+      : (crestOpen * 0.7) + ((100 - loudnessPressure) * 0.3),
+    0,
+    100,
+  );
+  const transientLife = clamp((crestOpen * 0.64) + ((100 - loudnessPressure) * 0.18) + ((100 - pressureScore) * 0.18), 0, 100);
+  const dynamicState = peak > -0.8 && crest < 6.5 ? "LIMITED" : crest < 7 ? "COMPRESSED" : crest < 10 ? "CONTROLLED" : "OPEN";
+  const transientRead = transientLife >= 72 ? "Peaks still speak" : transientLife >= 48 ? "Peaks are controlled" : "Peaks are getting flattened";
+  const pressureBandTop = 28 + (loudnessPressure * 0.32);
+  const floorHeight = 18 + (pressureScore * 0.26);
+  const envelopeHeight = 40 + (crestOpen * 0.34);
+  const crestWidth = 26 + (crestOpen * 0.42);
+  const sideTaper = 8 + ((100 - crestOpen) * 0.08);
+  const transientSpikes = Array.from({ length: 12 }, (_, index) => {
+    const phase = index / 11;
+    const ridge = 0.55 + (Math.sin((phase * Math.PI * 2.2) - 0.35) * 0.18);
+    const spike = clamp((transientScore * ridge) + (crestOpen * 0.14) - (loudnessPressure * 0.1), 10, 100);
+    return `<span class="dynamics-spike" style="height:${(16 + (spike * 0.34)).toFixed(1)}px"></span>`;
+  }).join("");
+  dynamicsScoreText.textContent = `${dynamicScore}/100`;
+  dynamicsViz.innerHTML = `
+    <div class="dynamics-scope quality-${dynamicQuality} dynamics-state-${dynamicState.toLowerCase()}">
+      <div
+        class="dynamics-stage"
+        style="--pressure-band-top:${pressureBandTop.toFixed(1)}%; --floor-height:${floorHeight.toFixed(1)}%; --envelope-height:${envelopeHeight.toFixed(1)}%; --crest-width:${crestWidth.toFixed(1)}%; --side-taper:${sideTaper.toFixed(1)}%;"
+      >
+        <div class="dynamics-stage-grid"></div>
+        <div class="dynamics-envelope-field"></div>
+        <div class="dynamics-pressure-band"></div>
+        <div class="dynamics-floor"></div>
+        <div class="dynamics-ceiling-line"></div>
+        <div class="dynamics-transient-row">
+          ${transientSpikes}
+        </div>
+      </div>
+      <div class="dynamics-readouts">
+        <div class="phase-readout dynamics-readout">
+          <span class="phase-readout-label">Crest</span>
+          <strong class="phase-readout-value">${formatMetric(crest, " dB")}</strong>
+        </div>
+        <div class="phase-readout dynamics-readout">
+          <span class="phase-readout-label">Pressure</span>
+          <strong class="phase-readout-value">${Math.round(loudnessPressure)}%</strong>
+        </div>
+        <div class="phase-readout dynamics-readout">
+          <span class="phase-readout-label">Transient</span>
+          <strong class="phase-readout-value">${Math.round(transientScore)}%</strong>
+        </div>
+      </div>
+    </div>
+  `;
+  setTooltipContent(
+    dynamicsViz,
+    "Dynamics",
+    `Crest factor is ${formatMetric(crest, " dB")}. RMS sits at ${formatMetric(rms, " dBFS")} while peak reaches ${formatMetric(peak, " dBFS")}. Loudness reads ${formatMetric(lufs)} LUFS, loudness pressure is ${Math.round(loudnessPressure)}%, and transient life reads ${Math.round(transientLife)}%. The scope is showing crest headroom above the compression floor, with transient spikes riding against the current loudness band.`,
+    peak > -0.8 && crest < 6.5
+      ? "Back the limiter off first. Peak margin and crest factor are both running out of patience."
+      : loudnessPressure >= 78
+        ? "Reduce loudness pressure before chasing more level. The record is already paying for it."
+        : "Protect transient life before making broad compression moves.",
+  );
+}
+
+function renderTonalHeatmap(data) {
+  const bands = getFrequencyBalance(data);
+  const order = [
+    ["sub", "Sub", "20-60 Hz", "Weight and rumble zone."],
+    ["bass", "Bass", "60-250 Hz", "Punch and low-end foundation."],
+    ["low_mid", "Low Mid", "250-500 Hz", "Body, mud and boxiness zone."],
+    ["mid", "Mid", "500-2000 Hz", "Presence, focus and intelligibility."],
+    ["high_mid", "High Mid", "2000-6000 Hz", "Attack, bite and forwardness."],
+    ["high", "High", "6000-16000 Hz", "Air, sheen and brightness."],
+  ];
+  tonalHeatmap.innerHTML = order.map(([key, label, range, meaning]) => {
+    const value = Number(bands[key] ?? 0);
+    const percent = Math.round(clamp(value * 100, 0, 100));
+    const score = Math.round(value * 400);
+    return `
+      <div
+        class="heat-meter heat-${key} quality-${getQualityClass(score)}"
+        style="--heat-angle:${Math.round((percent / 100) * 360)}deg; --heat-strength:${clamp(percent / 100, 0.16, 1)}"
+        data-tooltip-title="${label}: ${percent}%"
+        data-tooltip-body="${range} ${meaning}"
+        data-tooltip-suggest="${getBandSuggestion(key, value)}"
+      >
+        <div class="heat-meter-ring">
+          <div class="heat-meter-inner">
+            <strong class="heat-meter-value">${percent}%</strong>
+          </div>
+        </div>
+        <span class="heat-meter-label">${label}</span>
+        <span class="heat-meter-range">${range}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderReport(data, fileName, mode) {
+  const evaluation = evaluateQuality(data, mode);
+  currentAnalysisData = data;
+  currentAnalyzedTrackName = fileName;
+  trackMapAnalysisActive = true;
+  renderHeaderMeta(fileName, data, mode, evaluation);
+  renderOverview(data, evaluation);
+  renderMetrics(data, evaluation, mode);
+  renderAssistant(data, evaluation);
+  renderFrequencyBands(data);
+  renderStereoVisualization(data, evaluation);
+  renderDynamicsVisualization(data, evaluation, mode);
+  renderTonalHeatmap(data);
+  resultBox.textContent = JSON.stringify(data, null, 2);
+  reportSection.hidden = false;
+  setUploadCondensed(true);
+  setAnalysisHeaderState(true);
+  applyTranslationProtection();
+  applyLanguageConsistencyCheck();
+}
+
+function resetForNewAnalysis() {
+  setUploadCondensed(false);
+  setAnalysisHeaderState(false);
+  setSelectedFile(null);
+  setStatus("Ready for a new track.");
+  setAssistantState({
+    mood: "Idle",
+    quality: "average",
+    expression: "neutral",
+    sections: [
+      {
+        id: "reset",
+        body: "Open a new track and we will put the ears back on the desk.",
+      },
+    ],
+  });
+  requestAnimationFrame(() => {
+    dropZone.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+}
+
+async function runAnalysis() {
+  const file = fileInput.files[0];
+  if (!file) {
+    setStatus("Select a track first.");
+    return false;
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  const mode = analysisMode.value;
+  setStatus("Listening...");
+  if (!reportSection.hidden) {
+    setAssistantState({
+      mood: "Listening",
+      quality: "average",
+      expression: "listening",
+      sections: [
+        {
+          id: "listening",
+          body: "I am listening through it now. Give me a second and I will tell you what kind of mood just walked into the room.",
+        },
+      ],
+    });
+  }
+  analyzeBtn.disabled = true;
+
+  try {
+    const response = await fetch(API_URL, { method: "POST", body: formData });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    renderReport(data, file.name, mode);
+    setStatus("Read complete.");
+    return true;
+  } catch (error) {
+    reportSection.hidden = false;
+    resultBox.textContent = String(error);
+    setStatus("Read failed.");
+    setUploadCondensed(false);
+    setAssistantState({
+      mood: "Interrupted",
+      quality: "weak",
+      expression: "concerned",
+      sections: [
+        {
+          id: "error",
+          body: "The data did not land this time. Try the file again.",
+        },
+      ],
+    });
+    return false;
+  } finally {
+    analyzeBtn.disabled = false;
+  }
+}
+
+function positionTooltip() {
+  tooltipFrame = 0;
+  if (tooltipPanel.hidden || !tooltipPointer) return;
+  const rect = tooltipPanel.getBoundingClientRect();
+  const padding = 14;
+  const offsetX = 22;
+  const offsetY = 22;
+  const fitsRight = tooltipPointer.x + offsetX + rect.width <= window.innerWidth - padding;
+  const fitsBelow = tooltipPointer.y + offsetY + rect.height <= window.innerHeight - padding;
+  const left = fitsRight
+    ? tooltipPointer.x + offsetX
+    : tooltipPointer.x - rect.width - offsetX;
+  const top = fitsBelow
+    ? tooltipPointer.y + offsetY
+    : tooltipPointer.y - rect.height - offsetY;
+
+  tooltipPanel.style.left = `${clamp(left, padding, window.innerWidth - rect.width - padding)}px`;
+  tooltipPanel.style.top = `${clamp(top, padding, window.innerHeight - rect.height - padding)}px`;
+}
+
+function requestTooltipPosition(clientX, clientY) {
+  tooltipPointer = { x: clientX, y: clientY };
+  if (tooltipFrame) return;
+  tooltipFrame = requestAnimationFrame(positionTooltip);
+}
+
+function showTooltip(target, clientX, clientY) {
+  if (!target?.dataset.tooltipTitle) return;
+  if (activeTooltipTarget !== target) {
+    tooltipTitle.textContent = target.dataset.tooltipTitle;
+    tooltipBody.textContent = target.dataset.tooltipBody || "";
+    tooltipSuggest.textContent = target.dataset.tooltipSuggest || "";
+    activeTooltipTarget = target;
+  }
+  tooltipPanel.hidden = false;
+  requestTooltipPosition(clientX, clientY);
+}
+
+function hideTooltip() {
+  if (tooltipFrame) {
+    cancelAnimationFrame(tooltipFrame);
+    tooltipFrame = 0;
+  }
+  activeTooltipTarget = null;
+  tooltipPointer = null;
+  tooltipPanel.hidden = true;
+}
+
+analyzeBtn.addEventListener("click", runAnalysis);
+
+newAnalysisBtn.addEventListener("click", () => {
+  resetForNewAnalysis();
+});
+
+uploadAnotherBtn.addEventListener("click", () => {
+  resetForNewAnalysis();
+  requestAnimationFrame(() => fileInput.click());
+});
+
+selectTrackBtn.addEventListener("click", () => {
+  fileInput.click();
+});
+
+modeToggle.addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleModeMenu();
+});
+
+modeMenu.querySelectorAll(".mode-option").forEach((option) => {
+  option.addEventListener("click", () => {
+    setMode(option.dataset.mode);
+    closeModeMenu();
+  });
+});
+
+dropZone.addEventListener("click", (event) => {
+  if (
+    event.target.closest(".tool-btn") ||
+    event.target.closest(".mode-menu") ||
+    event.target.closest(".selected-track")
+  ) {
+    return;
+  }
+  fileInput.click();
+});
+
+dropZone.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    fileInput.click();
+  }
+});
+
+["dragenter", "dragover"].forEach((eventName) => {
+  dropZone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    dropZone.classList.add("is-dragging");
+  });
+});
+
+["dragleave", "drop"].forEach((eventName) => {
+  dropZone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    if (eventName === "drop" && event.dataTransfer?.files?.length) {
+      const [file] = event.dataTransfer.files;
+      setSelectedFile(file);
+      setStatus(`Selected: ${file.name}`);
+    }
+    dropZone.classList.remove("is-dragging");
+  });
+});
+
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0] || null;
+  if (!file) {
+    updateFileSelectionState(null);
+    return;
+  }
+  setSelectedFile(file);
+  setStatus(`Selected: ${file.name}`);
+});
+
+document.addEventListener("pointermove", (event) => {
+  const target = event.target.closest("[data-tooltip-title]");
+  if (!target) {
+    if (activeTooltipTarget) {
+      hideTooltip();
+    }
+    return;
+  }
+
+  if (activeTooltipTarget !== target) {
+    showTooltip(target, event.clientX, event.clientY);
+    return;
+  }
+
+  requestTooltipPosition(event.clientX, event.clientY);
+});
+
+document.addEventListener("pointerleave", () => {
+  hideTooltip();
+});
+
+document.addEventListener("click", (event) => {
+  if (!modeSelect.contains(event.target)) {
+    closeModeMenu();
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (!reportSection.hidden) {
+    renderFrequencyBands(getSpectrumBandData());
+  }
+});
+
+setMode(analysisMode.value);
+applyTranslationProtection();
+applyLanguageConsistencyCheck();
+setAnalysisHeaderState(false);
+updateFileSelectionState(null);
