@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel
 
@@ -28,6 +28,7 @@ class AnalysisResponse(BaseModel):
     frequency_bands: FrequencyBands
     frequency_balance: FrequencyBands
     stereo_correlation: Optional[float]
+    analysis_status: Literal["ok", "silent", "too_short"]
     basic_warnings: list[str]
     warnings: Optional[list[str]] = None
     status: Optional[str] = None

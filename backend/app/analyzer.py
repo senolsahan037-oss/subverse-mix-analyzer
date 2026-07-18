@@ -7,6 +7,8 @@ import numpy as np
 import pyloudnorm as pyln
 import soundfile as sf
 
+from .config import settings
+
 FREQUENCY_BANDS: dict[str, tuple[float, float]] = {
     "sub": (20.0, 60.0),
     "bass": (60.0, 250.0),
@@ -17,15 +19,22 @@ FREQUENCY_BANDS: dict[str, tuple[float, float]] = {
 }
 
 
+class AudioDecodeError(Exception):
+    """Raised when a supported upload cannot be decoded as audio."""
+
+
 def _load_audio(file_path: str | Path) -> tuple[np.ndarray, int]:
     path = str(file_path)
     try:
         audio, sample_rate = sf.read(path, always_2d=True, dtype="float32")
-    except RuntimeError:
-        audio, sample_rate = librosa.load(path, sr=None, mono=False)
-        if audio.ndim == 1:
-            audio = audio[np.newaxis, :]
-        audio = audio.T.astype(np.float32)
+    except (RuntimeError, ValueError, OSError):
+        try:
+            audio, sample_rate = librosa.load(path, sr=None, mono=False)
+            if audio.ndim == 1:
+                audio = audio[np.newaxis, :]
+            audio = audio.T.astype(np.float32)
+        except Exception as exc:
+            raise AudioDecodeError("The uploaded file could not be decoded as audio.") from exc
 
     if audio.ndim == 1:
         audio = audio[:, np.newaxis]
@@ -96,8 +105,14 @@ def _warnings(
     approximate_lufs: float,
     stereo_correlation: float | None,
     frequency_balance: dict[str, float],
+    analysis_status: str,
 ) -> list[str]:
     warnings: list[str] = []
+
+    if analysis_status == "silent":
+        return ["Audio is silent; mix metrics are not meaningful."]
+    if analysis_status == "too_short":
+        return ["Audio is too short for a reliable mix analysis."]
 
     if peak_dbfs > -1.0:
         warnings.append("Peak level is close to 0 dBFS and may clip after conversion.")
@@ -137,6 +152,12 @@ def analyze_audio(file_path: str | Path) -> dict[str, object]:
     approximate_lufs = _approximate_lufs(audio, sample_rate)
     frequency_balance = _frequency_balance(audio, sample_rate)
     stereo_correlation = _stereo_correlation(audio)
+    if audio.size == 0 or peak <= 1e-12:
+        analysis_status = "silent"
+    elif duration_seconds < settings.min_analysis_seconds:
+        analysis_status = "too_short"
+    else:
+        analysis_status = "ok"
 
     return {
         "duration_seconds": round(duration_seconds, 3),
@@ -157,11 +178,13 @@ def analyze_audio(file_path: str | Path) -> dict[str, object]:
         "stereo_correlation": (
             None if stereo_correlation is None else round(stereo_correlation, 3)
         ),
+        "analysis_status": analysis_status,
         "basic_warnings": _warnings(
             peak_dbfs=peak_dbfs,
             crest_factor_db=crest_factor_db,
             approximate_lufs=approximate_lufs,
             stereo_correlation=stereo_correlation,
             frequency_balance=frequency_balance,
+            analysis_status=analysis_status,
         ),
     }

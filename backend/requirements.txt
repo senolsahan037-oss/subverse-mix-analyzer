@@ -7,3 +7,4 @@ librosa
 pyloudnorm
 python-multipart
 pytest
+PyYAML

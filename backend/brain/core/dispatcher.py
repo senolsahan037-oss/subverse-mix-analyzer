@@ -1,4 +1,4 @@
-from brain.core.registry import AgentRegistry
+from .registry import AgentRegistry
 
 class BrainDispatcher:
     def __init__(self):

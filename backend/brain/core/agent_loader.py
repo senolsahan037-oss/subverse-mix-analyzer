@@ -1,7 +1,7 @@
 from pathlib import Path
 import yaml
 
-AGENTS_DIR = Path("brain/agents")
+AGENTS_DIR = Path(__file__).resolve().parents[1] / "agents"
 
 def load_agents():
     agents = {}

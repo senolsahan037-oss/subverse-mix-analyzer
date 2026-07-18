@@ -41,6 +41,7 @@ def test_analyzer_returns_required_fields(tmp_path: Path) -> None:
         "frequency_bands",
         "frequency_balance",
         "stereo_correlation",
+        "analysis_status",
         "basic_warnings",
     }
 
@@ -53,3 +54,28 @@ def test_analyzer_returns_required_fields(tmp_path: Path) -> None:
     assert abs(sum(result["frequency_balance"].values()) - 1.0) < 0.01
     assert isinstance(result["stereo_correlation"], float)
     assert isinstance(result["basic_warnings"], list)
+    assert result["analysis_status"] == "ok"
+
+
+def test_silent_audio_has_explicit_non_failure_status(tmp_path: Path) -> None:
+    file_path = tmp_path / "silence.wav"
+    sf.write(file_path, np.zeros((48000, 2), dtype=np.float32), 48000)
+
+    result = analyze_audio(file_path)
+
+    assert result["analysis_status"] == "silent"
+    assert result["basic_warnings"] == [
+        "Audio is silent; mix metrics are not meaningful."
+    ]
+
+
+def test_very_short_audio_has_explicit_non_failure_status(tmp_path: Path) -> None:
+    file_path = tmp_path / "short.wav"
+    sf.write(file_path, np.full((10, 1), 0.1, dtype=np.float32), 48000)
+
+    result = analyze_audio(file_path)
+
+    assert result["analysis_status"] == "too_short"
+    assert result["basic_warnings"] == [
+        "Audio is too short for a reliable mix analysis."
+    ]

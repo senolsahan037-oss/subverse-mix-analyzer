@@ -1,4 +1,4 @@
-from brain.core.agent_loader import load_agents
+from .agent_loader import load_agents
 
 class AgentRegistry:
     def __init__(self):

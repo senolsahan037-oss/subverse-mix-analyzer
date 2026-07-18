@@ -1,6 +1,6 @@
 # Subverse Mix Analyzer
 
-Local AI-assisted mix/mastering analyzer.
+Local, rule-based mix/mastering analyzer.
 
 ## MVP
 - Upload WAV/MP3
@@ -10,26 +10,32 @@ Local AI-assisted mix/mastering analyzer.
 - Return JSON report
 - Simple web UI
 
+The current report is rule-based. There is no external AI model call in this version.
+
+## Analysis states
+
+- `ok`: the file was analyzed normally.
+- `silent`: the file contains no measurable audio; level and tonal metrics are returned for transparency but are not meaningful for mix decisions.
+- `too_short`: the file is shorter than the configured minimum analysis duration; the returned mix metrics are not reliable.
+
+## Configuration
+
+These backend environment variables are optional:
+
+- `MAX_UPLOAD_BYTES` — maximum accepted upload size; default `104857600` (100 MiB).
+- `MAX_ANALYSIS_SECONDS` — maximum decoded audio duration; default `1800` seconds.
+- `UPLOAD_CHUNK_BYTES` — upload read chunk size; default `1048576` bytes.
+- `MIN_ANALYSIS_SECONDS` — duration below which the response is marked `too_short`; default `0.5` seconds.
+
 ## Run
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn backend.app.main:app --reload
+python3 -m pip install -r requirements.txt
+python3 -m uvicorn backend.app.main:app --reload
 ```
 
 Open `http://127.0.0.1:8000`.
-
-## Docker
-```bash
-docker compose up --build
-```
-
-Frontend:
-
-```text
-http://localhost:5500
-```
 
 Backend docs:
 
@@ -37,20 +43,7 @@ Backend docs:
 http://localhost:8000/docs
 ```
 
-For LAN access from another device on the same network, open:
-
-```text
-http://<your-host-lan-ip>:5500
-```
-
-Notes:
-- The frontend serves the static UI on port `5500`.
-- The frontend proxies `/analyze` to the backend service over Docker networking.
-- The backend is also published on port `8000` for direct API access if needed.
-- No frontend host IP or `127.0.0.1` backend address is hardcoded.
-- Upload and analyze requests go through the frontend on port `5500`, so LAN clients work without changing the browser-side API URL.
-
 ## Test
 ```bash
-pytest
+pytest -q
 ```

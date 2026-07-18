@@ -1,16 +1,14 @@
-from brain.core.registry import AgentRegistry
-from brain.core.dispatcher import BrainDispatcher
+from backend.brain.core.registry import AgentRegistry
+from backend.brain.core.dispatcher import BrainDispatcher
 
-registry = AgentRegistry()
+def test_registry_loads_configured_agent() -> None:
+    registry = AgentRegistry()
+    assert registry.list_agents() == ["AI-WebDesigner"]
 
-print("Agents:")
-print(registry.list_agents())
 
-dispatcher = BrainDispatcher()
+def test_dispatcher_routes_dashboard_request() -> None:
+    dispatcher = BrainDispatcher()
+    agent = dispatcher.route("Subverse Lab için dashboard ve landing page oluştur")
 
-agent = dispatcher.route(
-    "Subverse Lab için dashboard ve landing page oluştur"
-)
-
-print("\nSelected:")
-print(agent["agent"]["name"])
+    assert agent is not None
+    assert agent["agent"]["name"] == "AI-WebDesigner"
