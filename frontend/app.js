@@ -1207,7 +1207,8 @@ function computeMudScore(bands) {
   return 84;
 }
 
-function computeMonoCompatibilityScore(stereo) {
+function computeMonoCompatibilityScore(stereo, measuredScore = NaN) {
+  if (Number.isFinite(measuredScore)) return clamp(measuredScore, 0, 100);
   if (stereo === null || !Number.isFinite(stereo)) return 78;
   if (stereo < -0.15) return 4;
   if (stereo < 0) return 14;
@@ -1227,6 +1228,7 @@ function computeDynamicRangeScore(crest, lufs, mode) {
 function buildAssessmentSignals(data, mode) {
   const bands = getFrequencyBalance(data);
   const peakDbfs = safeNumber(data.peak_dbfs, NaN);
+  const truePeakDb = safeNumber(data.true_peak_db, peakDbfs);
   const rmsDbfs = safeNumber(data.rms_dbfs, NaN);
   const lufs = safeNumber(data.approximate_lufs, NaN);
   const crest = safeNumber(data.crest_factor_db, NaN);
@@ -1234,6 +1236,7 @@ function buildAssessmentSignals(data, mode) {
   const stereo = data.stereo_correlation === null ? null : safeNumber(data.stereo_correlation, null);
   const sideRatioRaw = safeNumber(data.stereo_analysis?.side_ratio, NaN);
   const sideRatio = Number.isFinite(sideRatioRaw) ? sideRatioRaw : null;
+  const measuredMonoScore = safeNumber(data.stereo_analysis?.mono_compatibility_score, NaN);
 
   const lowEnd = safeNumber(bands.sub) + safeNumber(bands.bass);
   const topEnd = safeNumber(bands.high_mid) + safeNumber(bands.high);
@@ -1244,13 +1247,13 @@ function buildAssessmentSignals(data, mode) {
   const highMidValue = safeNumber(bands.high_mid);
   const highValue = safeNumber(bands.high);
 
-  const peakSafetyScore = computePeakSafetyScore(peakDbfs);
+  const peakSafetyScore = computePeakSafetyScore(truePeakDb);
   const tonalBalanceScore = computeFrequencyBalanceScore(bands);
   const stereoUsageScore = channels < 2
     ? 72
     : Math.round(clamp(
       computeStereoUsageScore(stereo, channels) * 0.65
-        + computeMonoCompatibilityScore(stereo) * 0.25
+        + computeMonoCompatibilityScore(stereo, measuredMonoScore) * 0.25
         + (sideRatio === null ? 72 : clamp(100 - Math.abs(sideRatio - 0.22) * 260, 20, 92)) * 0.1,
       0,
       100,
@@ -1276,16 +1279,16 @@ function buildAssessmentSignals(data, mode) {
       key: "peakSafety",
       label: "Peak Safety",
       score: peakSafetyScore,
-      currentValue: formatMetric(peakDbfs, " dBFS"),
+      currentValue: formatMetric(truePeakDb, " dBTP"),
       reason:
-        peakDbfs > -0.5
-          ? "Peak is too close to full scale."
-          : peakDbfs > -1
+        truePeakDb > -0.5
+          ? "True peak is too close to full scale."
+          : truePeakDb > -1
             ? "Headroom is narrow for safe encoding."
             : peakDbfs > -3
               ? "Headroom is usable but not generous."
               : "Peak margin is controlled.",
-      metrics: [`Peak ${formatMetric(peakDbfs, " dBFS")}`, mode === "final_master" ? "Target at least -1 dBTP equivalent margin." : "Pre-master margin should stay around -3 to -6 dBFS."],
+      metrics: [`True peak ${formatMetric(truePeakDb, " dBTP")}`, mode === "final_master" ? "Target at least -1 dBTP margin." : "Pre-master margin should stay around -3 to -6 dBFS."],
       suggestion: mode === "final_master"
         ? "Leave at least -1 dBTP before release export."
         : "Leave -3 to -6 dBFS of headroom before mastering.",
@@ -1328,7 +1331,7 @@ function buildAssessmentSignals(data, mode) {
       metrics: [
         `Correlation ${stereo === null ? "N/A" : stereo.toFixed(2)}`,
         sideRatio === null ? "Side ratio unavailable" : `Side ratio ${sideRatio.toFixed(2)}`,
-        `Mono compatibility ${computeMonoCompatibilityScore(stereo)}/100`,
+        `Measured mono compatibility ${computeMonoCompatibilityScore(stereo, measuredMonoScore)}/100`,
       ],
       suggestion: channels < 2 ? "Use arrangement or ambience for width if needed." : "Balance width against mono safety before widening further.",
     },
@@ -1419,6 +1422,7 @@ function evaluateQuality(data, mode) {
   const assessmentSignals = buildAssessmentSignals(data, mode);
   const bands = getFrequencyBalance(data);
   const peakDbfs = Number(data.peak_dbfs);
+  const truePeakDb = safeNumber(data.true_peak_db, peakDbfs);
   const lufs = Number(data.approximate_lufs);
   const crest = Number(data.crest_factor_db);
   const stereo = data.stereo_correlation === null ? null : Number(data.stereo_correlation);
@@ -1430,7 +1434,10 @@ function evaluateQuality(data, mode) {
     crestFactor: computeCrestFactorScore(crest),
     dynamicRange: assessmentSignals.dynamics.score,
     stereoUsage: assessmentSignals.stereoUsage.score,
-    monoCompatibility: computeMonoCompatibilityScore(stereo),
+    monoCompatibility: computeMonoCompatibilityScore(
+      stereo,
+      safeNumber(data.stereo_analysis?.mono_compatibility_score, NaN),
+    ),
     frequencyBalance: assessmentSignals.tonalBalance.score,
     harshness: assessmentSignals.harshness.score,
     mud: computeMudScore(bands),
@@ -1444,8 +1451,8 @@ function evaluateQuality(data, mode) {
       .reduce((sum, [key, value]) => sum + value * SCORE_WEIGHTS[key], 0),
   );
 
-  if (peakDbfs > -0.5) overallScore -= 12;
-  else if (peakDbfs > -1) overallScore -= 6;
+  if (truePeakDb > -0.5) overallScore -= 12;
+  else if (truePeakDb > -1) overallScore -= 6;
   if ((bands.high ?? 0) > 0.3) overallScore -= 8;
   if ((bands.low_mid ?? 0) > 0.24) overallScore -= 8;
   if (stereo !== null && stereo < 0) overallScore -= 18;
@@ -1464,12 +1471,12 @@ function evaluateQuality(data, mode) {
 function getMetricCards(data, evaluation, mode) {
   return [
     { key: "lufs", label: "LUFS", value: formatMetric(data.approximate_lufs), score: computeLoudnessBalanceScore(Number(data.approximate_lufs), mode) },
-    { key: "peak", label: "Peak", value: formatMetric(data.peak_dbfs, " dBFS"), score: computePeakSafetyScore(Number(data.peak_dbfs)) },
+    { key: "peak", label: "True Peak", value: formatMetric(data.true_peak_db ?? data.peak_dbfs, " dBTP"), score: computePeakSafetyScore(Number(data.true_peak_db ?? data.peak_dbfs)) },
     { key: "rms", label: "RMS", value: formatMetric(data.rms_dbfs, " dBFS"), score: clamp(100 - Math.abs(Number(data.rms_dbfs) + 12) * 8, 10, 90) },
     { key: "crest", label: "Crest", value: formatMetric(data.crest_factor_db, " dB"), score: computeCrestFactorScore(Number(data.crest_factor_db)) },
-    { key: "range", label: "Dynamic Range", value: `${evaluation.categoryScores.dynamicRange}/100`, score: evaluation.categoryScores.dynamicRange },
+    { key: "range", label: "Dynamic Range", value: formatMetric(data.dynamic_range_db, " dB"), score: evaluation.categoryScores.dynamicRange },
     { key: "stereo", label: "Stereo", value: `${evaluation.categoryScores.stereoUsage}/100`, score: evaluation.categoryScores.stereoUsage },
-    { key: "mono", label: "Mono", value: `${evaluation.categoryScores.monoCompatibility}/100`, score: evaluation.categoryScores.monoCompatibility },
+    { key: "mono", label: "Mono", value: `${evaluation.categoryScores.monoCompatibility}/100 measured`, score: evaluation.categoryScores.monoCompatibility },
     { key: "transient", label: "Transient", value: `${evaluation.categoryScores.transientDensity}/100`, score: evaluation.categoryScores.transientDensity },
   ];
 }
@@ -1494,12 +1501,12 @@ function humanizeWarningText(warning) {
 function getTooltipCopy(key, data, evaluation) {
   const map = {
     lufs: ["LUFS", `Current loudness is ${formatMetric(data.approximate_lufs)} LUFS.`, "More limiting may increase loudness but reduce dynamics."],
-    peak: ["Peak", `Peak is ${formatMetric(data.peak_dbfs, " dBFS")} from full scale.`, "0 dBFS proximity may cause clipping after encoding."],
+    peak: ["True Peak", `True peak is ${formatMetric(data.true_peak_db ?? data.peak_dbfs, " dBTP")}.`, "Keep true peak below the delivery ceiling before encoding."],
     rms: ["RMS", `RMS is ${formatMetric(data.rms_dbfs, " dBFS")} and reflects average signal energy.`, "Higher RMS without control often raises fatigue and reduces headroom."],
     crest: ["Crest Factor", `Crest factor is ${formatMetric(data.crest_factor_db, " dB")}.`, "Lower crest factor generally means stronger compression or limiting."],
-    range: ["Dynamic Range", `Dynamic range score is ${evaluation.categoryScores.dynamicRange}/100.`, "Preserve movement before increasing loudness."],
+    range: ["Dynamic Range", `Measured one-second RMS spread is ${formatMetric(data.dynamic_range_db, " dB")}; the display score is ${evaluation.categoryScores.dynamicRange}/100.`, "Preserve movement before increasing loudness."],
     stereo: ["Stereo Usage", `Stereo score is ${evaluation.categoryScores.stereoUsage}/100.`, "Wide stereo is useful only if phase remains stable."],
-    mono: ["Mono Compatibility", `Mono compatibility score is ${evaluation.categoryScores.monoCompatibility}/100.`, "Reduce phase-heavy width if fold-down becomes unstable."],
+    mono: ["Mono Compatibility", `Measured fold-down loss is ${formatMetric(data.stereo_analysis?.mono_fold_down_loss_db, " dB")}; compatibility is ${evaluation.categoryScores.monoCompatibility}/100.`, "Reduce phase-heavy width if fold-down becomes unstable."],
     transient: ["Transient Density", `Transient density score is ${evaluation.categoryScores.transientDensity}/100.`, "Preserve attack if the mix feels flattened."],
   };
   return map[key];
@@ -2147,7 +2154,11 @@ function renderPhaseScope(data, evaluation) {
     : stereo === null
       ? 0.02
       : clamp((1 - stereo) * 0.26, 0.02, 0.32);
-  const monoSafety = evaluation.categoryScores.monoCompatibility;
+  const monoSafety = safeNumber(
+    data.stereo_analysis?.mono_compatibility_score,
+    evaluation.categoryScores.monoCompatibility,
+  );
+  const foldLoss = safeNumber(data.stereo_analysis?.mono_fold_down_loss_db, 0);
   const phaseState = getPhaseState(stereo);
   const qualityClass = getQualityClass(monoSafety);
   const correlationRatio = stereo === null ? 1 : clamp((stereo + 1) / 2, 0, 1);
@@ -2164,7 +2175,7 @@ function renderPhaseScope(data, evaluation) {
   }
 
   phaseScope.innerHTML = `
-    <div class="phase-panel quality-${qualityClass}" data-tooltip-title="Phase Scope" data-tooltip-body="Correlation ${stereo === null ? "Mono" : stereo.toFixed(2)}. Mono compatibility ${monoSafety}/100. Side estimate ${Math.round(sideRatio * 100)}%. The cloud widens as side activity and phase tension increase." data-tooltip-suggest="${phaseState.key === "risk" ? "Pull decorrelated width back and check the mono fold before doing anything else." : "Use the cloud to judge whether width is helping translation or just showing off."}">
+    <div class="phase-panel quality-${qualityClass}" data-tooltip-title="Phase Scope" data-tooltip-body="Correlation ${stereo === null ? "Mono" : stereo.toFixed(2)}. Measured mono fold-down loss ${foldLoss.toFixed(2)} dB; compatibility ${monoSafety}/100. Side ratio ${Math.round(sideRatio * 100)}%." data-tooltip-suggest="${phaseState.key === "risk" ? "Pull decorrelated width back and check the mono fold before doing anything else." : "Use the cloud to judge whether width is helping translation or just showing off."}">
       <div class="phase-stage phase-state-${phaseState.key}">
         <div class="phase-ring" style="--ring-strength:${ringStrength};"></div>
         <div class="phase-safe-diamond"></div>
@@ -2211,7 +2222,11 @@ function renderStereoVisualization(data, evaluation) {
     : stereo === null
       ? 0
       : clamp((1 - stereo) * 100, 0, 100);
-  const monoSafety = stereo === null ? 100 : clamp(((stereo + 1) / 2) * 100, 0, 100);
+  const monoSafety = safeNumber(
+    data.stereo_analysis?.mono_compatibility_score,
+    stereo === null ? 100 : clamp(((stereo + 1) / 2) * 100, 0, 100),
+  );
+  const foldLoss = safeNumber(data.stereo_analysis?.mono_fold_down_loss_db, 0);
   const phaseRisk = stereo !== null && stereo < 0.25 ? "High" : stereo !== null && stereo < 0.55 ? "Medium" : "Low";
   const scopeWidth = clamp(widthScore, stereo === null ? 0 : 10, 100);
   const stereoQuality = getQualityClass(evaluation.categoryScores.stereoUsage);
@@ -2236,7 +2251,7 @@ function renderStereoVisualization(data, evaluation) {
   })();
   stereoScoreText.textContent = `${evaluation.categoryScores.stereoUsage}/100`;
   stereoViz.innerHTML = `
-    <div class="stereo-scope quality-${stereoQuality}" data-tooltip-title="Stereo Cloud" data-tooltip-body="Width ${Math.round(widthScore)}%, correlation ${stereo === null ? "Mono" : stereo.toFixed(2)}, mono safety ${Math.round(monoSafety)}%, phase risk ${phaseRisk.toLowerCase()}. The cloud shows how centered or side-heavy the mix feels." data-tooltip-suggest="Read the cloud first. A tight cloud means center focus; a wider cloud means stronger side activity.">
+    <div class="stereo-scope quality-${stereoQuality}" data-tooltip-title="Stereo Cloud" data-tooltip-body="Width ${Math.round(widthScore)}%, correlation ${stereo === null ? "Mono" : stereo.toFixed(2)}, measured mono fold-down loss ${foldLoss.toFixed(2)} dB, phase risk ${phaseRisk.toLowerCase()}." data-tooltip-suggest="Read the cloud first. A tight cloud means center focus; a wider cloud means stronger side activity.">
       <div class="stereo-scope-grid"></div>
       <div class="stereo-scope-header">
         <span class="stereo-scope-side">EXTREME SIDES</span>
@@ -2259,7 +2274,7 @@ function renderStereoVisualization(data, evaluation) {
       </div>
       <div class="stereo-correlation-ribbon">
         <span>Corr ${stereo === null ? "Mono" : stereo.toFixed(2)}</span>
-        <span>Mono ${Math.round(monoSafety)}%</span>
+        <span>Fold ${foldLoss.toFixed(1)} dB</span>
       </div>
     </div>
     <div class="stereo-interpretation">
@@ -2271,8 +2286,8 @@ function renderStereoVisualization(data, evaluation) {
         <strong class="stereo-readout-value">${Math.round(widthScore)}%</strong>
       </div>
       <div class="stereo-readout-card">
-        <span class="stereo-readout-label">Mono Safety</span>
-        <strong class="stereo-readout-value">${Math.round(monoSafety)}%</strong>
+        <span class="stereo-readout-label">Fold Loss</span>
+        <strong class="stereo-readout-value">${foldLoss.toFixed(1)} dB</strong>
       </div>
       <div class="stereo-readout-card">
         <span class="stereo-readout-label">Correlation</span>
@@ -2305,6 +2320,7 @@ function renderDynamicsVisualization(data, evaluation, mode) {
   const lufs = Number(data.approximate_lufs);
   const peak = Number(data.peak_dbfs);
   const rms = Number(data.rms_dbfs);
+  const dynamicRange = safeNumber(data.dynamic_range_db, 0);
   const dynamicScore = evaluation.categoryScores.dynamicRange;
   const dynamicQuality = getQualityClass(dynamicScore);
   const crestOpen = clamp(((crest - 4) / 10) * 100, 0, 100);
@@ -2353,8 +2369,8 @@ function renderDynamicsVisualization(data, evaluation, mode) {
           <strong class="phase-readout-value">${formatMetric(crest, " dB")}</strong>
         </div>
         <div class="phase-readout dynamics-readout">
-          <span class="phase-readout-label">Pressure</span>
-          <strong class="phase-readout-value">${Math.round(loudnessPressure)}%</strong>
+          <span class="phase-readout-label">Range</span>
+          <strong class="phase-readout-value">${formatMetric(dynamicRange, " dB")}</strong>
         </div>
         <div class="phase-readout dynamics-readout">
           <span class="phase-readout-label">Transient</span>
@@ -2366,7 +2382,7 @@ function renderDynamicsVisualization(data, evaluation, mode) {
   setTooltipContent(
     dynamicsViz,
     "Dynamics",
-    `Crest factor is ${formatMetric(crest, " dB")}. RMS sits at ${formatMetric(rms, " dBFS")} while peak reaches ${formatMetric(peak, " dBFS")}. Loudness reads ${formatMetric(lufs)} LUFS, loudness pressure is ${Math.round(loudnessPressure)}%, and transient life reads ${Math.round(transientLife)}%. The scope is showing crest headroom above the compression floor, with transient spikes riding against the current loudness band.`,
+    `Crest factor is ${formatMetric(crest, " dB")}. RMS sits at ${formatMetric(rms, " dBFS")} while sample peak reaches ${formatMetric(peak, " dBFS")}. Measured one-second RMS range is ${formatMetric(dynamicRange, " dB")}. Loudness reads ${formatMetric(lufs)} LUFS, loudness pressure is ${Math.round(loudnessPressure)}%, and transient life reads ${Math.round(transientLife)}%.`,
     peak > -0.8 && crest < 6.5
       ? "Back the limiter off first. Peak margin and crest factor are both running out of patience."
       : loudnessPressure >= 78

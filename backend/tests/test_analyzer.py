@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 import soundfile as sf
 
 from backend.app.analyzer import FREQUENCY_BANDS, analyze_audio
@@ -38,9 +39,13 @@ def test_analyzer_returns_required_fields(tmp_path: Path) -> None:
         "rms_dbfs",
         "crest_factor_db",
         "approximate_lufs",
+        "true_peak",
+        "true_peak_db",
+        "dynamic_range_db",
         "frequency_bands",
         "frequency_balance",
         "stereo_correlation",
+        "stereo_analysis",
         "analysis_status",
         "basic_warnings",
     }
@@ -55,6 +60,44 @@ def test_analyzer_returns_required_fields(tmp_path: Path) -> None:
     assert isinstance(result["stereo_correlation"], float)
     assert isinstance(result["basic_warnings"], list)
     assert result["analysis_status"] == "ok"
+
+
+def test_stereo_measurements_are_channel_aware_and_detect_fold_down_loss(
+    tmp_path: Path,
+) -> None:
+    sample_rate = 48000
+    timeline = np.arange(sample_rate, dtype=np.float32) / sample_rate
+    left = 0.1 * np.sin(2 * np.pi * 440 * timeline)
+    stereo_audio = np.column_stack((left, -left))
+    file_path = tmp_path / "out_of_phase.wav"
+    sf.write(file_path, stereo_audio, sample_rate)
+
+    result = analyze_audio(file_path)
+
+    assert result["rms_dbfs"] == pytest.approx(-23.01, abs=0.05)
+    assert result["stereo_correlation"] == pytest.approx(-1.0, abs=0.001)
+    assert result["stereo_analysis"]["mono_compatibility_status"] == "risk"
+    # PCM quantization leaves a residual after an otherwise exact cancellation.
+    assert result["stereo_analysis"]["mono_fold_down_loss_db"] > 60
+
+
+def test_true_peak_and_dynamic_range_are_measured(tmp_path: Path) -> None:
+    sample_rate = 48000
+    timeline = np.arange(sample_rate * 4, dtype=np.float32) / sample_rate
+    signal = np.concatenate(
+        [
+            0.05 * np.sin(2 * np.pi * 997 * timeline[:sample_rate]),
+            0.4 * np.sin(2 * np.pi * 997 * timeline[sample_rate:]),
+        ]
+    )
+    file_path = tmp_path / "varying_level.wav"
+    sf.write(file_path, signal, sample_rate)
+
+    result = analyze_audio(file_path)
+
+    assert result["true_peak"] >= result["peak"]
+    assert result["true_peak_db"] >= result["peak_dbfs"]
+    assert result["dynamic_range_db"] > 10
 
 
 def test_silent_audio_has_explicit_non_failure_status(tmp_path: Path) -> None:

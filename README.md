@@ -4,13 +4,16 @@ Local, rule-based mix/mastering analyzer.
 
 ## MVP
 - Upload WAV/MP3
-- Analyze LUFS, peak, RMS, crest factor
+- Analyze BS.1770 integrated LUFS, sample/true peak, RMS, crest factor and dynamic-range spread
 - Frequency band balance
 - Stereo correlation
+- Mono fold-down loss and stereo mid/side measurements
 - Return JSON report
 - Simple web UI
 
 The current report is rule-based. There is no external AI model call in this version.
+
+True peak is measured with 4× sample-rate oversampling. `dynamic_range_db` is the 95th–10th percentile spread of audible one-second RMS windows, so it is a repeatable mix-dynamics measurement rather than an EBU LRA value. Stereo analysis reports mid/side energy and the level loss created by an L/R mono fold-down.
 
 ## Analysis states
 
