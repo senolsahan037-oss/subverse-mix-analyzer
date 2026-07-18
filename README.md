@@ -8,6 +8,7 @@ Local, rule-based mix/mastering analyzer.
 - Frequency band balance
 - Stereo correlation
 - Mono fold-down loss and stereo mid/side measurements
+- BPM and key estimates with confidence values
 - Return JSON report
 - Simple web UI
 
@@ -29,6 +30,11 @@ These backend environment variables are optional:
 - `MAX_ANALYSIS_SECONDS` — maximum decoded audio duration; default `1800` seconds.
 - `UPLOAD_CHUNK_BYTES` — upload read chunk size; default `1048576` bytes.
 - `MIN_ANALYSIS_SECONDS` — duration below which the response is marked `too_short`; default `0.5` seconds.
+- `ANALYSIS_WORKERS` — concurrent background analysis jobs; default `2`.
+
+## Asynchronous analysis
+
+`POST /analyze` remains available for a synchronous JSON response. The frontend uses `POST /analyze/jobs` and polls `GET /analyze/jobs/{job_id}` for queued/running/completed/failed status and progress. Jobs are in-memory and are intended for a single running backend instance.
 
 ## Run
 ```bash

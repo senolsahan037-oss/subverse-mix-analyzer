@@ -37,6 +37,7 @@ class Settings:
     max_analysis_seconds: int = _positive_int("MAX_ANALYSIS_SECONDS", 30 * 60)
     upload_chunk_bytes: int = _positive_int("UPLOAD_CHUNK_BYTES", 1024 * 1024)
     min_analysis_seconds: float = _positive_float("MIN_ANALYSIS_SECONDS", 0.5)
+    analysis_workers: int = _positive_int("ANALYSIS_WORKERS", 2)
     temp_dir: Path | None = None
 
 

@@ -41,7 +41,19 @@ class AnalysisResponse(BaseModel):
     frequency_balance: FrequencyBands
     stereo_correlation: Optional[float]
     stereo_analysis: StereoAnalysis
+    bpm: Optional[float]
+    bpm_confidence: float
+    key: Optional[str]
+    key_confidence: float
     analysis_status: Literal["ok", "silent", "too_short"]
     basic_warnings: list[str]
     warnings: Optional[list[str]] = None
     status: Optional[str] = None
+
+
+class AnalysisJobResponse(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    progress: int
+    result: Optional[AnalysisResponse] = None
+    error: Optional[str] = None

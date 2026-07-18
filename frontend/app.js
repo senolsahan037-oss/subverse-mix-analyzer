@@ -1478,6 +1478,8 @@ function getMetricCards(data, evaluation, mode) {
     { key: "stereo", label: "Stereo", value: `${evaluation.categoryScores.stereoUsage}/100`, score: evaluation.categoryScores.stereoUsage },
     { key: "mono", label: "Mono", value: `${evaluation.categoryScores.monoCompatibility}/100 measured`, score: evaluation.categoryScores.monoCompatibility },
     { key: "transient", label: "Transient", value: `${evaluation.categoryScores.transientDensity}/100`, score: evaluation.categoryScores.transientDensity },
+    { key: "bpm", label: "BPM", value: data.bpm === null || data.bpm === undefined ? "N/A" : `${formatMetric(data.bpm)} (${Math.round(safeNumber(data.bpm_confidence) * 100)}%)`, score: Math.round(safeNumber(data.bpm_confidence) * 100) },
+    { key: "key", label: "Key", value: data.key || "N/A", score: Math.round(safeNumber(data.key_confidence) * 100) },
   ];
 }
 
@@ -1508,6 +1510,8 @@ function getTooltipCopy(key, data, evaluation) {
     stereo: ["Stereo Usage", `Stereo score is ${evaluation.categoryScores.stereoUsage}/100.`, "Wide stereo is useful only if phase remains stable."],
     mono: ["Mono Compatibility", `Measured fold-down loss is ${formatMetric(data.stereo_analysis?.mono_fold_down_loss_db, " dB")}; compatibility is ${evaluation.categoryScores.monoCompatibility}/100.`, "Reduce phase-heavy width if fold-down becomes unstable."],
     transient: ["Transient Density", `Transient density score is ${evaluation.categoryScores.transientDensity}/100.`, "Preserve attack if the mix feels flattened."],
+    bpm: ["BPM Estimate", `Tempo is ${data.bpm === null ? "unavailable" : `${formatMetric(data.bpm)} BPM`} with ${Math.round(safeNumber(data.bpm_confidence) * 100)}% confidence.`, "Confirm tempo against the musical grid before making arrangement decisions."],
+    key: ["Key Estimate", `Estimated key is ${data.key || "unavailable"} with ${Math.round(safeNumber(data.key_confidence) * 100)}% confidence.`, "Confirm harmonic key by ear before using it for tuning or remix work."],
   };
   return map[key];
 }
@@ -2493,9 +2497,19 @@ async function runAnalysis() {
   analyzeBtn.disabled = true;
 
   try {
-    const response = await fetch(API_URL, { method: "POST", body: formData });
+    const response = await fetch(`${API_URL}/jobs`, { method: "POST", body: formData });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
+    const job = await response.json();
+    let data = null;
+    while (!data) {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      const jobResponse = await fetch(`${API_URL}/jobs/${job.job_id}`);
+      if (!jobResponse.ok) throw new Error(`HTTP ${jobResponse.status}`);
+      const currentJob = await jobResponse.json();
+      setStatus(`Listening... ${currentJob.progress}%`);
+      if (currentJob.status === "completed") data = currentJob.result;
+      if (currentJob.status === "failed") throw new Error(currentJob.error || "Analysis failed");
+    }
     renderReport(data, file.name, mode);
     setStatus("Read complete.");
     return true;

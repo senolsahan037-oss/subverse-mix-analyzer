@@ -46,6 +46,10 @@ def test_analyzer_returns_required_fields(tmp_path: Path) -> None:
         "frequency_balance",
         "stereo_correlation",
         "stereo_analysis",
+        "bpm",
+        "bpm_confidence",
+        "key",
+        "key_confidence",
         "analysis_status",
         "basic_warnings",
     }
@@ -60,6 +64,23 @@ def test_analyzer_returns_required_fields(tmp_path: Path) -> None:
     assert isinstance(result["stereo_correlation"], float)
     assert isinstance(result["basic_warnings"], list)
     assert result["analysis_status"] == "ok"
+
+
+def test_musical_analysis_returns_tempo_and_key_with_confidence(tmp_path: Path) -> None:
+    sample_rate = 22050
+    duration_seconds = 8
+    audio = np.zeros(sample_rate * duration_seconds, dtype=np.float32)
+    for start in range(0, len(audio), sample_rate // 2):
+        audio[start : start + 400] = np.hanning(400)
+    file_path = tmp_path / "tempo.wav"
+    sf.write(file_path, audio, sample_rate)
+
+    result = analyze_audio(file_path)
+
+    assert result["bpm"] == pytest.approx(120, abs=3)
+    assert 0 < result["bpm_confidence"] <= 1
+    assert result["key"] is not None
+    assert 0 <= result["key_confidence"] <= 1
 
 
 def test_stereo_measurements_are_channel_aware_and_detect_fold_down_loss(

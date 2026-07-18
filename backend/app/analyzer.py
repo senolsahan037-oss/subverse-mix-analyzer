@@ -19,6 +19,10 @@ FREQUENCY_BANDS: dict[str, tuple[float, float]] = {
     "high": (6000.0, 16000.0),
 }
 
+KEY_NAMES = ("C", "C♯/D♭", "D", "D♯/E♭", "E", "F", "F♯/G♭", "G", "G♯/A♭", "A", "A♯/B♭", "B")
+MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+
 
 class AudioDecodeError(Exception):
     """Raised when a supported upload cannot be decoded as audio."""
@@ -87,6 +91,66 @@ def _dynamic_range(audio: np.ndarray, sample_rate: int) -> float:
     if len(audible_levels) < 2:
         return 0.0
     return float(np.percentile(audible_levels, 95) - np.percentile(audible_levels, 10))
+
+
+def _tempo_and_key(audio: np.ndarray, sample_rate: int) -> dict[str, float | str | None]:
+    """Estimate musical tempo and key; return unavailable values for short/silent audio."""
+    if sample_rate <= 0 or len(audio) < sample_rate * 3 or _rms(audio) <= 1e-12:
+        return {"bpm": None, "bpm_confidence": 0.0, "key": None, "key_confidence": 0.0}
+
+    mono = audio.mean(axis=1)
+    try:
+        frame_size = 2048
+        hop_size = 512
+        frame_count = 1 + max(0, (len(mono) - frame_size) // hop_size)
+        frames = np.stack(
+            [mono[index * hop_size : index * hop_size + frame_size] for index in range(frame_count)]
+        )
+        spectrum = np.abs(np.fft.rfft(frames * np.hanning(frame_size), axis=1))
+        log_spectrum = np.log1p(spectrum)
+        onset_envelope = np.sum(np.maximum(np.diff(log_spectrum, axis=0), 0.0), axis=1)
+        autocorrelation = np.correlate(onset_envelope, onset_envelope, mode="full")[len(onset_envelope) - 1 :]
+        min_lag = max(1, round((60.0 * sample_rate) / (200.0 * hop_size)))
+        max_lag = min(len(autocorrelation) - 1, round((60.0 * sample_rate) / (60.0 * hop_size)))
+        if max_lag <= min_lag or np.std(onset_envelope) < max(np.mean(onset_envelope) * 0.1, 1e-6):
+            bpm, bpm_confidence = None, 0.0
+        else:
+            tempo_region = autocorrelation[min_lag : max_lag + 1]
+            best_lag = min_lag + int(np.argmax(tempo_region))
+            bpm = 60.0 * sample_rate / (hop_size * best_lag)
+            while bpm < 80.0:
+                bpm *= 2.0
+            while bpm > 180.0:
+                bpm /= 2.0
+            bpm_confidence = float(np.clip(autocorrelation[best_lag] / max(autocorrelation[0], 1e-12), 0.0, 1.0))
+
+        frequencies = np.fft.rfftfreq(frame_size, d=1.0 / sample_rate)
+        valid = (frequencies >= 20.0) & (frequencies <= 5000.0)
+        midi = np.rint(69.0 + (12.0 * np.log2(frequencies[valid] / 440.0))).astype(int)
+        pitch_classes = np.mod(midi, 12)
+        pitch_class_profile = np.bincount(
+            pitch_classes,
+            weights=np.mean(spectrum[:, valid], axis=0),
+            minlength=12,
+        ).astype(float)
+        normalized_profile = pitch_class_profile / max(np.linalg.norm(pitch_class_profile), 1e-12)
+        candidates: list[tuple[float, str]] = []
+        for tonic, name in enumerate(KEY_NAMES):
+            for mode, template in (("major", MAJOR_PROFILE), ("minor", MINOR_PROFILE)):
+                normalized_template = np.roll(template, tonic) / np.linalg.norm(template)
+                candidates.append((float(np.dot(normalized_profile, normalized_template)), f"{name} {mode}"))
+        candidates.sort(reverse=True)
+        best_score, key = candidates[0]
+        next_score = candidates[1][0]
+        key_confidence = float(np.clip((best_score - next_score) / max(1.0 - next_score, 1e-12), 0.0, 1.0))
+        return {
+            "bpm": round(bpm, 2) if bpm is not None and np.isfinite(bpm) else None,
+            "bpm_confidence": round(bpm_confidence, 3),
+            "key": key,
+            "key_confidence": round(key_confidence, 3),
+        }
+    except Exception:
+        return {"bpm": None, "bpm_confidence": 0.0, "key": None, "key_confidence": 0.0}
 
 
 def _frequency_balance(audio: np.ndarray, sample_rate: int) -> dict[str, float]:
@@ -219,6 +283,7 @@ def analyze_audio(file_path: str | Path) -> dict[str, object]:
     frequency_balance = _frequency_balance(audio, sample_rate)
     stereo_correlation = _stereo_correlation(audio)
     stereo_analysis = _stereo_analysis(audio)
+    musical_analysis = _tempo_and_key(audio, sample_rate)
     if audio.size == 0 or peak <= 1e-12:
         analysis_status = "silent"
     elif duration_seconds < settings.min_analysis_seconds:
@@ -249,6 +314,7 @@ def analyze_audio(file_path: str | Path) -> dict[str, object]:
             None if stereo_correlation is None else round(stereo_correlation, 3)
         ),
         "stereo_analysis": stereo_analysis,
+        **musical_analysis,
         "analysis_status": analysis_status,
         "basic_warnings": _warnings(
             peak_dbfs=peak_dbfs,
