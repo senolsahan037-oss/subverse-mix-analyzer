@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "subverse-measurement"
+version = "0.1.0"
+description = "Evidence-first audio and reference mix analysis API."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.136.1",
+  "firebase-admin==7.5.0",
+  "google-cloud-storage==3.13.0",
+  "librosa==0.10.1",
+  "numpy==2.4.6",
+  "pyloudnorm==0.2.0",
+  "python-multipart==0.0.28",
+  "scipy==1.17.1",
+  "soundfile==0.13.1",
+  "subverse-mix @ git+https://github.com/senolsahan037-oss/loom#subdirectory=MixAnalyzer",
+  "uvicorn==0.47.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx==0.28.1",
+  "pytest==9.0.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools]
+packages = ["subverse"]
+
+[tool.setuptools.package-data]
+subverse = ["data/*.json", "web/*"]
