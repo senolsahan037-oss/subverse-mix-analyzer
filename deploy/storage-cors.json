@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://MIX_CHECK_HOST"],
+    "method": ["PUT"],
+    "responseHeader": ["Content-Type", "x-goog-resumable"],
+    "maxAgeSeconds": 3600
+  }
+]

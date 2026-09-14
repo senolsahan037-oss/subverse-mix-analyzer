@@ -1,9 +1,10 @@
 __pycache__/
 *.pyc
+.pytest_cache/
+build/
+*.egg-info/
 .env
 .venv/
-venv/
-uploads/
-outputs/
 .DS_Store
 node_modules/
+firebase-debug.log

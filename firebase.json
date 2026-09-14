@@ -1,0 +1,10 @@
+{
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "SubverseLab Mix Check",
+        "supportEmail": "senolsahan037@gmail.com"
+      }
+    }
+  }
+}

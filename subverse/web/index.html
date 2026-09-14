@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Inspect mix and master measurements as traceable signal data."
+    />
+    <meta name="theme-color" content="#07070a" />
+    <title>Mix Check — SubverseLab</title>
+    <link rel="icon" href="/assets/mix-check-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20260913_v7" />
+    <script src="/assets/app.js?v=20260913_v7" defer></script>
+  </head>
+  <body>
+    <button id="sign-out-button" style="display:none;" hidden></button>
+    <main class="tool-only-shell">
+
+      <!-- The door. Mix Check writes out a subverse-mix-analysis JSON, so it opens
+           for members (Rules/00, "Where the gate sits"). Hidden by default and
+           shown only when there is no session; renderAccessState() decides. -->
+      <main class="members-wall" id="members-wall" hidden>
+        <section class="members-wall-card">
+          <div class="members-wall-brand">
+            <img src="/assets/mix-check-mark.svg" width="34" height="34" alt="" />
+            <div>
+              <strong>Mix Check</strong>
+              <small>SubverseLab member tool</small>
+            </div>
+          </div>
+          <h1 id="members-wall-title">Members only</h1>
+          <p>
+            Mix Check measures your mix and hands you the analysis as a file, so it
+            opens for SubverseLab members. You sign in on subverselab.com — with
+            Google or with an email address — and Mix Check picks the session up
+            from there.
+          </p>
+          <button type="button" class="members-wall-action" id="members-wall-action">
+            SIGN IN ON SUBVERSELAB
+          </button>
+          <small class="members-wall-note">
+            Free account — no payment, no card. Read the
+            <a href="https://subverselab.com/learn/subverse-mix-check" target="_top" rel="noreferrer">guide</a>
+            first if you want to see what it measures.
+          </small>
+        </section>
+      </main>
+
+      <section class="workspace" id="analysis-workspace" aria-label="Analysis workspace" hidden>
+      <!-- setAuthError() writes here. Without this element it found no node,
+           returned, and a failed service initialisation reported itself to
+           nobody: the page simply came up with no genres and no explanation. -->
+      <p id="auth-error" class="auth-error" role="alert" hidden></p>
+        <form id="analysis-form" class="control-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="section-index">01 / Signal context</span>
+              <h2>What are we measuring?</h2>
+            </div>
+            <div class="segmented" role="radiogroup" aria-label="Analysis stage">
+              <label>
+                <input type="radio" name="analysis_stage" value="mix" checked />
+                <span>Mix</span>
+              </label>
+              <label>
+                <input type="radio" name="analysis_stage" value="master" />
+                <span>Master</span>
+              </label>
+            </div>
+          </div>
+
+          <input
+            class="visually-hidden"
+            id="audio-file"
+            name="file"
+            type="file"
+            accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"
+          />
+          <label class="upload-zone" id="upload-zone" for="audio-file">
+            <span class="upload-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" />
+                <path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+              </svg>
+            </span>
+            <span class="upload-copy">
+              <strong>Drop a WAV or MP3 file</strong>
+              <span>Maximum duration 6 minutes · Maximum size 100 MB</span>
+            </span>
+            <span class="upload-action">Choose file</span>
+          </label>
+
+          <div class="upload-selected" id="upload-selected" hidden>
+            <span class="file-type" id="file-type">WAV</span>
+            <div class="file-copy">
+              <strong id="file-name"></strong>
+              <span id="file-size"></span>
+            </div>
+            <button
+              type="button"
+              class="icon-button"
+              id="remove-file"
+              aria-label="Remove selected file"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m7 7 10 10M17 7 7 17" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="context-grid">
+            <div class="field-group">
+              <label for="genre-select">
+                <span class="section-index">02 / Measurement context</span>
+                Genre Profile
+              </label>
+              <div class="select-shell">
+                <select id="genre-select" name="genre">
+                  <option value="">Measure without a Genre Profile</option>
+                </select>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m8 10 4 4 4-4" />
+                </svg>
+              </div>
+              <p>A selected profile enables a measured distribution comparison.</p>
+              <label class="closest-profile-option" for="use-closest-profile">
+                <input
+                  id="use-closest-profile"
+                  name="use_closest_profile"
+                  type="checkbox"
+                  value="true"
+                  checked
+                />
+                <span>
+                  <strong>Use closest measured profile</strong>
+                  <small>
+                    When no Genre or Reference is selected, compare against the
+                    technically nearest stored profile.
+                  </small>
+                </span>
+              </label>
+            </div>
+
+            <div class="analysis-promise">
+              <span class="signal-dot"></span>
+              <div>
+                <strong id="mode-promise-title">Direct Mix measurement</strong>
+                <p id="mode-promise">
+                  Waveform, level, spectral, channel, and mono fold-down data.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <details class="advanced" id="advanced-reference">
+            <summary>
+              <span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3v18M3 12h18" />
+                </svg>
+                Add a Reference Track
+              </span>
+              <small>Optional</small>
+            </summary>
+            <div class="advanced-body">
+              <div class="reference-row">
+                <label class="reference-upload" for="reference-file">
+                  <input
+                    id="reference-file"
+                    name="reference"
+                    type="file"
+                    accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"
+                  />
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M9 18V5l10-2v13" />
+                    <circle cx="6" cy="18" r="3" />
+                    <circle cx="16" cy="16" r="3" />
+                  </svg>
+                  <span>
+                    <strong id="reference-name">Choose a Reference Track</strong>
+                    <small id="reference-help">WAV or MP3</small>
+                  </span>
+                </label>
+                <div class="field-group compact">
+                  <label for="reference-stage">Reference Stage</label>
+                  <div class="select-shell">
+                    <select id="reference-stage" name="reference_stage" disabled>
+                      <option value="mix">Mix</option>
+                      <option value="master">Master</option>
+                    </select>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="m8 10 4 4 4-4" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+              <p class="reference-rule">
+                A Reference Track becomes the comparison basis. The selected
+                Genre Profile remains context only. Use the same arrangement or
+                section where possible; the analyzer compares full-track
+                summaries and does not align song sections automatically.
+              </p>
+            </div>
+          </details>
+
+          <div class="form-error" id="form-error" role="alert" tabindex="-1" hidden></div>
+
+          <div class="form-footer">
+            <p>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 8v4l2.5 1.5" />
+                <circle cx="12" cy="12" r="9" />
+              </svg>
+              The upload is held temporarily and deleted after analysis.
+            </p>
+            <button class="primary-button" id="analyze-button" type="submit" disabled>
+              <span>Start analysis</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12h14m-5-5 5 5-5 5" />
+              </svg>
+            </button>
+          </div>
+        </form>
+
+        <section class="loading-panel" id="loading-panel" aria-live="polite" hidden>
+          <div class="loader-signal" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="loading-copy">
+            <span class="section-index">Signal processing</span>
+            <h2 id="loading-stage">Uploading audio</h2>
+            <p>Elapsed <span id="loading-elapsed">00:00</span> · No estimated percentage</p>
+          </div>
+          <ol class="loading-steps" aria-label="Analysis stages">
+            <li class="is-active">Upload</li>
+            <li>Decode</li>
+            <li>Measure</li>
+            <li>Report</li>
+          </ol>
+        </section>
+
+        <section class="results console" id="results" aria-live="polite" hidden>
+          <div class="results-header">
+            <div>
+              <span class="status-badge"><i></i> Measurement complete</span>
+              <h2 id="result-title">Track measurement</h2>
+              <div class="track-metadata" id="track-metadata"></div>
+              <div class="result-context" id="result-context" hidden>
+                <strong id="result-context-title"></strong>
+                <span id="result-context-copy"></span>
+              </div>
+            </div>
+            <button class="secondary-button" id="new-analysis" type="button">
+              New analysis
+            </button>
+            <button class="secondary-button" id="download-result" type="button">
+              Download JSON
+            </button>
+          </div>
+
+          <section class="console-section waveform-section" aria-labelledby="waveform-title">
+            <div class="section-heading">
+              <div>
+                <span class="section-index">01 / Decoded signal</span>
+                <h3 id="waveform-title">Raw Waveform Envelope</h3>
+              </div>
+              <span class="method-note">Raw min/max · No normalization</span>
+            </div>
+            <div class="waveform-shell">
+              <div id="waveform-channels" class="waveform-channels"></div>
+              <div class="waveform-axis" id="waveform-axis"></div>
+              <div class="waveform-readout" id="waveform-readout" aria-live="polite">
+                Move across the waveform to inspect time and amplitude.
+              </div>
+            </div>
+          </section>
+
+          <section class="console-section measurements-section" aria-labelledby="measurements-title">
+            <div class="section-heading">
+              <div>
+                <span class="section-index">02 / Direct measurements</span>
+                <h3 id="measurements-title">Signal Measurements</h3>
+              </div>
+              <span class="method-note" id="measurement-status"></span>
+            </div>
+            <div class="measurement-table-wrap">
+              <table class="measurement-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Measurement</th>
+                    <th scope="col">Value</th>
+                    <th scope="col">Context</th>
+                  </tr>
+                </thead>
+                <tbody id="measurement-rows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <div class="measurement-grid">
+            <section class="console-section tonal-section" aria-labelledby="tonal-title">
+              <div class="section-heading"><div><span class="section-index">03A / Tonal map</span><h3 id="tonal-title">Pitch-class energy</h3></div><span class="method-note" id="tonal-confidence"></span></div>
+              <p class="technical-note" id="tonal-summary">Descriptive tonal center lead.</p>
+              <div class="tonal-bars" id="tonal-bars"></div>
+            </section>
+            <section class="console-section spectrum-section" aria-labelledby="spectrum-title">
+              <div class="section-heading">
+                <div>
+                  <span class="section-index">03 / Spectral measurement</span>
+                  <h3 id="spectrum-title">One-third-octave Spectrum</h3>
+                </div>
+                <span class="chart-legend" id="chart-legend"><i></i> Raw level</span>
+              </div>
+              <div class="spectrum-chart" id="spectrum-chart"></div>
+              <div class="chart-axis" aria-hidden="true">
+                <span>31.5 Hz</span><span>100 Hz</span><span>1 kHz</span>
+                <span>10 kHz</span><span>16 kHz</span>
+              </div>
+              <p class="empty-chart" id="empty-chart" hidden>
+                Spectral measurement is unavailable for this signal.
+              </p>
+            </section>
+
+            <section class="console-section mono-section" aria-labelledby="mono-title">
+              <div class="section-heading">
+                <div>
+                  <span class="section-index">04 / Stereo translation</span>
+                  <h3 id="mono-title">Mono Fold-down</h3>
+                </div>
+                <span class="mono-state" id="mono-state"></span>
+              </div>
+              <dl class="technical-list">
+                <div><dt>Status</dt><dd id="mono-status-value"></dd></div>
+                <div><dt>Detection threshold</dt><dd id="mono-threshold"></dd></div>
+                <div><dt>Activity floor</dt><dd id="mono-floor"></dd></div>
+                <div><dt>Loss regions</dt><dd id="mono-regions"></dd></div>
+              </dl>
+              <p class="technical-note" id="mono-summary"></p>
+            </section>
+          </div>
+
+          <section class="console-section intelligence-section" aria-labelledby="intelligence-title">
+            <div class="section-heading">
+              <div><span class="section-index">05 / Tonal and section intelligence</span><h3 id="intelligence-title">Signal Context</h3></div>
+              <span class="method-note">Descriptive leads · not automatic correction</span>
+            </div>
+            <div class="intelligence-grid">
+              <div><span class="metric-label">Key candidate</span><strong id="key-candidate">—</strong><small id="key-confidence"></small></div>
+              <div><span class="metric-label">Chord candidate</span><strong id="chord-candidate">—</strong><small id="chord-confidence"></small></div>
+              <div><span class="metric-label">Noise floor</span><strong id="noise-floor">—</strong><small>10th percentile frame RMS</small></div>
+            </div>
+            <div class="section-strip" id="section-strip"></div>
+            <p class="technical-note">Key/chord values are listening leads. Section values expose where a track changes instead of hiding the whole-track average.</p>
+          </section>
+
+          <section class="console-section findings-section" id="findings-section" aria-labelledby="findings-title">
+            <div class="section-heading">
+              <div>
+                <span class="section-index">05 / Evidence-backed interpretation</span>
+                <h3 id="findings-title">Listening Checks</h3>
+              </div>
+              <span class="method-note" id="finding-count"></span>
+            </div>
+            <div class="findings-list" id="findings-list"></div>
+          </section>
+
+          <section class="console-section guide-section" id="analysis-guide" aria-labelledby="guide-title">
+            <div class="section-heading">
+              <div>
+                <span class="section-index">06 / Guided interpretation</span>
+                <h3 id="guide-title">Explore This Analysis</h3>
+              </div>
+              <span class="method-note">Answers use this measurement only</span>
+            </div>
+            <div class="guide-layout">
+              <div
+                class="guide-questions"
+                id="guide-questions"
+                aria-label="Questions about this analysis"
+              ></div>
+              <div
+                class="guide-answer"
+                id="guide-answer"
+                role="region"
+                aria-live="polite"
+                aria-labelledby="guide-answer-title"
+              >
+                <span class="guide-source" id="guide-answer-source"></span>
+                <h4 id="guide-answer-title"></h4>
+                <p id="guide-answer-copy"></p>
+              </div>
+            </div>
+          </section>
+
+          <section class="secondary-data" aria-label="Supporting technical data">
+            <details class="data-disclosure" id="affinity-disclosure">
+              <summary>
+                <span>
+                  <small>Exploratory only</small>
+                  Profile Proximity
+                </span>
+                <strong id="affinity-summary">View ranking</strong>
+              </summary>
+              <div class="disclosure-body">
+                <p id="affinity-notice"></p>
+                <div class="affinity-list" id="affinity-list"></div>
+              </div>
+            </details>
+
+            <details class="data-disclosure">
+              <summary>
+                <span>
+                  <small>Method scope</small>
+                  Comparison Policy
+                </span>
+                <strong id="policy-title"></strong>
+              </summary>
+              <div class="disclosure-body">
+                <div class="policy-section">
+                  <h4>Included measurements</h4>
+                  <div class="metric-tags" id="compared-metrics"></div>
+                </div>
+                <div class="policy-section" id="excluded-section">
+                  <h4>Excluded measurements</h4>
+                  <div id="excluded-metrics"></div>
+                </div>
+              </div>
+            </details>
+
+            <details class="data-disclosure">
+              <summary>
+                <span>
+                  <small>Interpretation boundary</small>
+                  Limitations
+                </span>
+                <strong id="limitation-count"></strong>
+              </summary>
+              <div class="disclosure-body">
+                <ul class="limitations" id="limitations"></ul>
+              </div>
+            </details>
+
+            <details class="data-disclosure raw-data-disclosure">
+              <summary>
+                <span>
+                  <small>Machine-readable</small>
+                  Raw Measurement Data
+                </span>
+                <strong>JSON</strong>
+              </summary>
+              <div class="disclosure-body">
+                <button class="copy-button" id="copy-raw-data" type="button">
+                  Copy JSON
+                </button>
+                <pre id="raw-data"></pre>
+              </div>
+            </details>
+          </section>
+        </section>
+      </section>
+    </main>
+
+  </body>
+</html>

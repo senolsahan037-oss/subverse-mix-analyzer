@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="SubverseLab Mix Check Privacy Notice." />
+    <title>Privacy Notice — SubverseLab Mix Check</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/">Subverse<span class="brand-accent">Lab</span></a>
+      <span class="product-name">Mix Check · Privacy</span>
+    </header>
+    <main class="legal-page">
+      <span class="section-index">Effective 2 August 2026</span>
+      <h1>Privacy Notice</h1>
+      <p>This notice explains the limited data used to operate the Mix Check beta.</p>
+      <h2>Data we process</h2>
+      <ul>
+        <li>Google account identifier, email, display name, and profile image.</li>
+        <li>Uploaded WAV or MP3 audio and the measurements produced from it.</li>
+        <li>A daily keyed hash derived from the connection IP address for quota enforcement.</li>
+        <li>Basic security, error, and request logs maintained by the cloud platform.</li>
+      </ul>
+      <h2>Why we process it</h2>
+      <p>
+        Account data authenticates membership. Audio is processed to provide the requested
+        analysis. Account and network quota records prevent abuse and support the one-analysis-
+        per-day beta limit. Operational logs protect and diagnose the service.
+      </p>
+      <h2>Retention</h2>
+      <p>
+        Working audio is deleted after analysis. Abandoned uploads are covered by a short
+        storage lifecycle rule and may remain for up to 24 hours. The raw IP address is not
+        stored in the quota database; its keyed daily hash cannot be reused across days.
+        Account records remain while membership is active. Short-lived quota records and
+        provider logs are retained only for operational and security needs.
+      </p>
+      <h2>Service providers and transfers</h2>
+      <p>
+        Google Firebase Authentication, Firestore, Cloud Storage, and Cloud Run process data
+        as infrastructure providers. Their processing locations and safeguards are governed by
+        Google Cloud terms. We do not sell personal data or use uploaded audio to train a model.
+      </p>
+      <h2>Your choices and rights</h2>
+      <p>
+        You can stop using the service and sign out at any time. Depending on where you live,
+        you may request access, correction, deletion, restriction, or objection concerning your
+        personal data. Submit requests through
+        <a href="https://subverselab.com">subverselab.com</a>. We may need to verify identity.
+      </p>
+      <h2>Security and changes</h2>
+      <p>
+        We use access controls, authenticated requests, temporary object paths, and deletion
+        routines designed to reduce exposure. No internet service can guarantee absolute
+        security. Updates to this notice will carry a revised effective date.
+      </p>
+      <p><a href="/">Return to Mix Check</a></p>
+    </main>
+  </body>
+</html>
